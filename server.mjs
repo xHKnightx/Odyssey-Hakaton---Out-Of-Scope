@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { GOOGLE_SCOPES, googleConfigured, googleRedirectUri, googleAuthorizationUrl, exchangeGoogleCode, readGoogleToken, removeGoogleToken, googleApi } from './lib/google.mjs';
 import { analyzeCalendar, makeDemoCalendar } from './lib/calendar.mjs';
 import { createGamification } from './lib/gamification.mjs';
+import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -138,6 +139,26 @@ async function route(req, res) {
     catch (error) { console.error('Google OAuth callback failed:', error.message); return redirect(res, `/?google_error=${encodeURIComponent(error.message)}#connections`); }
   }
   if (url.pathname.startsWith('/api/')) {
+    if (req.method === 'GET' && url.pathname === '/api/oracle/status') {
+      return json(res, 200, oracleStatus());
+    }
+    if (req.method === 'POST' && url.pathname === '/api/oracle/chat') {
+      const b=await body(req),userId=resolveUserId(b.userId);
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      const messages=(Array.isArray(b.messages)?b.messages:[]).slice(-12);
+      const text=String([...messages].reverse().find(message=>message?.role==='user')?.content||'').trim();
+      if(!text)return json(res,400,{error:'Enter a question first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep each Oracle message under 4,000 characters.'});
+      const user=one('SELECT id,name,title,team,skills FROM users WHERE id=?',userId);
+      const solutions=all('SELECT s.id,s.title,s.kind,s.summary,s.runnable,s.minutes_saved,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id ORDER BY s.id');
+      const people=all('SELECT id,name,title,team,skills,experience,availability,location,initials,color FROM users WHERE id<>? ORDER BY name',userId);
+      const inserted=db.prepare('INSERT INTO requests(text,user_id) VALUES(?,?)').run(text,userId);
+      const requestId=Number(inserted.lastInsertRowid),award=gamification.rewardSeek(userId,requestId);
+      const result=await consultOracle({messages,solutions,people,user});
+      const solution=result.recommendation.solutionId?solutions.find(item=>item.id===result.recommendation.solutionId)||null:null;
+      const recommendedPeople=(result.recommendation.peopleIds||[]).map(id=>people.find(item=>item.id===id)).filter(Boolean);
+      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,status:oracleStatus()});
+    }
     if (req.method === 'GET' && url.pathname === '/api/google/status') {
       const token = await readGoogleToken();
       return json(res, 200, { configured:googleConfigured(), connected:Boolean(token), email:token?.email||'', name:token?.name||'', redirectUri:googleRedirectUri(), scopes:GOOGLE_SCOPES, grantedScopes:token?.scope||'' });

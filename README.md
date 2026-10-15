@@ -12,4 +12,8 @@ npm start
 
 Open <http://localhost:3000>. The SQLite database is created at `data/pythia.db` on first launch and seeded with demo people, solutions, requests, and contribution history. Remove `data/pythia.db` to reset the demo.
 
-The MVP includes local keyword search, a deterministic demo agent run for Calendar Breather, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. AI and live provider connections are intentionally stubbed for local use.
+The MVP includes Oracle search/chat, a Calendar Breather run, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. Oracle can use an OpenAI-compatible LLM gateway, Calendar/Gmail can use Google OAuth, and both retain local demo fallbacks.
+
+## Oracle LLM
+
+Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See [ORACLE-LLM-SETUP.md](./ORACLE-LLM-SETUP.md).
