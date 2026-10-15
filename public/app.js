@@ -25,9 +25,11 @@ function renderReturnControls(){
   const states=['#seek-consult','#share-consult','#seek-results','#share-results'];
   for(const selector of states){
     const state=$(selector);if(!state)continue;
-    let button=state.querySelector(':scope > [data-seek-home]');
-    if(!button){button=document.createElement('button');button.type='button';button.dataset.seekHome='';state.prepend(button)}
+    const placement=state.querySelector('.seek-input-head')||state;
+    let button=state.querySelector('[data-seek-home]');
+    if(!button){button=document.createElement('button');button.type='button';button.dataset.seekHome=''}
     button.className='return-button';button.textContent='← Return';
+    placement.prepend(button);
   }
   const sanctumReturn=$('#sanctum .back');
   if(sanctumReturn){sanctumReturn.className='return-button';sanctumReturn.textContent='← Return'}

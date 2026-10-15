@@ -2,10 +2,11 @@
 .seek-narrow{width:min(760px,100%);margin:0 auto}
 .seek-back{border:0;background:none;color:var(--fg2);padding:4px 0;font:500 12px var(--sans);cursor:pointer}
 .seek-back:hover{color:var(--gold)}
-.seek-input-head{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding:22px 0 28px}
-.seek-input-head .kicker{font-size:10px}
-.seek-input-head h1{margin:0;font:600 clamp(32px,5vw,48px)/1.12 var(--inscr);letter-spacing:.02em}
-.seek-input-head p{margin:0;color:var(--fg2);font:500 19px/1.45 var(--verse)}
+.seek-input-head{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;text-align:center;gap:14px 12px;padding:22px 0 28px}
+.seek-input-head .return-button{grid-column:1;grid-row:1;justify-self:start}
+.seek-input-head .kicker{grid-column:2;grid-row:1;font-size:10px}
+.seek-input-head h1{grid-column:1/-1;margin:0;font:600 clamp(32px,5vw,48px)/1.12 var(--inscr);letter-spacing:.02em}
+.seek-input-head p{grid-column:1/-1;margin:0;color:var(--fg2);font:500 19px/1.45 var(--verse)}
 .oracle-composer{position:relative;padding:19px 20px 12px;border:1px solid var(--line2);border-radius:3px;background:linear-gradient(180deg,var(--panel2),var(--panel));box-shadow:0 18px 60px rgba(0,0,0,.18)}
 .oracle-composer:before{content:"";position:absolute;inset:5px;border:1px solid var(--line);pointer-events:none}
 .oracle-composer textarea{position:relative;width:100%;min-height:128px;padding:5px 1px 16px;border:0;outline:0;resize:vertical;background:transparent;color:var(--fg);font:500 22px/1.45 var(--verse)}
@@ -113,7 +114,7 @@
 .share-confirm .button{flex:none;min-height:42px}
 .wisdom-success{margin-top:28px}
 @media(max-width:640px){
-  .seek-input-head{padding-top:15px}.oracle-composer{padding:16px 16px 11px}.oracle-composer textarea{font-size:19px}.oracle-composer-bar{align-items:center}
+  .seek-input-head{grid-template-columns:auto 1fr;padding-top:15px}.seek-input-head .kicker{grid-column:2}.seek-input-head .kicker:before{display:none}.oracle-composer{padding:16px 16px 11px}.oracle-composer textarea{font-size:19px}.oracle-composer-bar{align-items:center}
   .oracle-card{padding:27px 21px 24px}.oracle-card h1{font-size:28px}.oracle-answer{font-size:19px}.oracle-preview{align-items:flex-start}.oracle-match{display:none}
   .oracle-found-head{align-items:flex-start;flex-direction:column;gap:3px}.oracle-followup{align-items:stretch;flex-direction:column}.oracle-followup>div{margin:0 0 4px}
   .oracle-thinking{grid-template-columns:auto 1fr;margin-top:42px}.oracle-thinking ul{grid-column:1/-1}.oracle-request summary{grid-template-columns:1fr auto}.oracle-request summary>span{display:none}
