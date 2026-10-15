@@ -13,6 +13,45 @@ async function api(path, options={}) {
   return payload;
 }
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3400)}
+const BrowserSpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+let activeRecognition=null,activeVoiceButton=null;
+function resetVoiceInput(){
+  if(activeVoiceButton){
+    activeVoiceButton.classList.remove('listening');
+    activeVoiceButton.setAttribute('aria-pressed','false');
+    activeVoiceButton.setAttribute('aria-label','Start voice input');
+    const hint=activeVoiceButton.closest('.oracle-composer-bar')?.querySelector('.hint');
+    if(hint?.dataset.voiceOriginal)hint.textContent=hint.dataset.voiceOriginal;
+  }
+  activeRecognition=null;activeVoiceButton=null;
+}
+function startVoiceInput(button){
+  if(!BrowserSpeechRecognition){toast('Voice input is not supported in this browser. Try Chrome or type your message.');return}
+  if(activeRecognition){activeRecognition.stop();if(activeVoiceButton===button)return}
+  const input=$(`#${button.dataset.voiceTarget}`);if(!input)return;
+  const hint=button.closest('.oracle-composer-bar')?.querySelector('.hint');
+  if(hint&&!hint.dataset.voiceOriginal)hint.dataset.voiceOriginal=hint.textContent;
+  const base=input.value===input.defaultValue?'':input.value.trim();
+  const recognition=new BrowserSpeechRecognition();
+  recognition.continuous=true;recognition.interimResults=true;recognition.lang=navigator.language||'en-US';
+  recognition.onstart=()=>{
+    activeRecognition=recognition;activeVoiceButton=button;
+    button.classList.add('listening');button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Stop voice input');
+    if(hint)hint.textContent='Listening… speak naturally, then tap the microphone to stop';
+  };
+  recognition.onresult=event=>{
+    let transcript='';
+    for(let i=0;i<event.results.length;i++)transcript+=event.results[i][0]?.transcript||'';
+    input.value=[base,transcript.trim()].filter(Boolean).join(base?' ':'');
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  };
+  recognition.onerror=event=>{
+    if(event.error==='not-allowed'||event.error==='service-not-allowed')toast('Microphone access was not allowed. Enable it for this site or type your message.');
+    else if(event.error!=='aborted'&&event.error!=='no-speech')toast(`Voice input stopped: ${event.error}.`);
+  };
+  recognition.onend=()=>{if(activeRecognition===recognition)resetVoiceInput()};
+  try{recognition.start()}catch(error){resetVoiceInput();toast('Voice input could not start. Try again or type your message.')}
+}
 function view(id){document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='connections')loadGoogleStatus()}
 function avatar(person,size=''){return `<span class="av ${size}" style="background:${esc(person.color||'#d4a855')}" title="${esc(person.name)}">${esc(person.initials||person.name.split(' ').map(n=>n[0]).join('').slice(0,2))}</span>`}
 function iconLaurel(){let leaves='';for(let i=0;i<9;i++){const d=255-i*15,a=d*Math.PI/180,r=i%2?52:46,x=60+r*Math.cos(a),y=60-r*Math.sin(a),rot=-d+90+(i%2?-28:28);leaves+=`<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="8.5" ry="3.4" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})"/>`}return `<svg class="laurel-svg" viewBox="0 0 120 120" fill="currentColor"><g>${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g><g transform="translate(120 0) scale(-1 1)">${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g></svg>`}
@@ -84,6 +123,7 @@ async function loadOracleStatus(){
 }
 
 function showSeekState(name){
+  if(activeRecognition)activeRecognition.stop();
   const states=['seek-home','seek-consult','seek-results','share-consult','share-results'];
   const active=name.includes('-')?name:`seek-${name}`;
   for(const state of states)$(`#${state}`).hidden=state!==active;
@@ -235,6 +275,10 @@ document.addEventListener('click',async event=>{
 });
 
 $('#people-search').addEventListener('input',renderDirectory);
+document.querySelectorAll('[data-voice-target]').forEach(button=>{
+  if(!BrowserSpeechRecognition){button.disabled=true;button.title='Voice input is not supported in this browser';button.setAttribute('aria-label','Voice input is not supported')}
+  button.addEventListener('click',()=>startVoiceInput(button));
+});
 $('#question').addEventListener('keydown',event=>{
   if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.repeat)return;
   event.preventDefault();

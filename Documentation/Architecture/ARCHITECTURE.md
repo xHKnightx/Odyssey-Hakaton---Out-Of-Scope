@@ -64,6 +64,8 @@ The Expertise directory filter chips are built only from recurring employees' ar
 
 `POST /api/oracle/chat` is the main Seek Wisdom endpoint.
 
+Seek Wisdom and Share Wisdom also expose optional browser voice input. The microphone buttons use the Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) to place an editable transcript in the existing text area; they do not submit automatically. PYTHIA's server never receives microphone audio, but the browser may send audio to its configured speech-recognition provider. The resulting text follows the same normal Seek or Share submission path only after the colleague explicitly submits it. Unsupported browsers show a disabled microphone control, and denied microphone permission leaves typing available.
+
 ```mermaid
 sequenceDiagram
   participant U as User

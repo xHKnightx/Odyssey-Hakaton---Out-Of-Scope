@@ -13,6 +13,11 @@
 .oracle-composer-bar{position:relative;display:flex;align-items:center;gap:16px;padding-top:11px;border-top:1px solid var(--line)}
 .oracle-composer-bar .hint{flex:1;font-size:10px}
 .oracle-composer-bar .button{min-width:100px;min-height:42px;margin-left:auto}
+.voice-button{width:42px;height:42px;display:grid;place-items:center;flex:none;padding:0;border:1px solid var(--line2);border-radius:50%;background:var(--panel2);color:var(--gold);transition:border-color .16s,background .16s,color .16s,box-shadow .16s}
+.voice-button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.voice-button:hover{border-color:var(--gold);background:var(--gold-dim)}
+.voice-button.listening{border-color:var(--terra);background:rgba(200,100,59,.14);color:#e18a67;box-shadow:0 0 0 4px rgba(200,100,59,.08)}
+.voice-button:disabled{cursor:not-allowed;opacity:.35}
 .seek-samples{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px;color:var(--fg3);font-size:12px}
 .seek-samples button{padding:7px 11px;border:1px dashed var(--line2);border-radius:2px;background:transparent;color:var(--fg2);font-size:12px}
 .seek-samples button:hover{border-style:solid;border-color:var(--gold);color:var(--gold)}
