@@ -3,6 +3,7 @@
 Calendar Breather uses Google OAuth directly from this local app. Its planning flow requests these scopes:
 
 - `calendar.events`: read calendar events and create reviewed recovery blocks.
+- `calendar.readonly`: read primary-calendar metadata such as its timezone. Reauthorize if Connections reports this permission missing.
 - `gmail.readonly`: retained for the separate legacy meeting sentiment analysis route; recovery-break planning never reads Gmail.
 - `openid email profile`: sign in to PYTHIA and show which Google account is connected.
 
@@ -32,8 +33,10 @@ The same OAuth client and the same redirect URI (`http://localhost:3000/auth/goo
 ## Planning and scheduling recovery breaks
 
 1. Open Calendar Breather from Oracle. Sign in and connect the same Google account under Connections.
-2. Select **Run it on my week**, describe what you want, then choose a 5, 10, or 15-minute break, activity style, working hours, weekdays, and how many holds to receive this week.
-3. PYTHIA reads the primary calendar for the next seven days, including all-day events. Event titles, attendees, descriptions, and Gmail are not sent to the SecondStack model. The model may rank only the free slots calculated locally; if unavailable, the local planner still returns slots.
-4. PYTHIA automatically adds up to five tentative private holds to your calendar. Open the invitation list in Connections and accept or decline each hold; accepting confirms it, declining removes it.
+2. Open **Calendar Breather** and choose Gentle, Balanced, or Extra room mode and whether the analysis loop runs once daily or once weekly. PYTHIA selects a break count and 5/7/8/9/10/15-minute durations.
+3. PYTHIA analyzes the next seven days on each pass and previews weekdays with existing events alongside suggested break holds inside the app. By default, event content remains local and the model sees only sanitized load counts and free candidate slots. Related email subjects/snippets and prior meeting titles are included by default for LLM sentiment analysis; uncheck the context option to keep them out; attendee addresses and full email bodies are never sent.
+4. The Oracle decides how many breaks suit the next seven days, counting existing holds in that window. PYTHIA adds the selected holds tentatively to your calendar. Open the invitation list in Connections and accept or decline each hold; accepting confirms it, declining removes it.
 
-The planning flow requires a connected Google Calendar and does not substitute seeded demo events. Nothing is written until you press **Schedule selected breaks**. Weekly series are fixed recurrence rules; later calendar changes can introduce conflicts, so review the calendar after scheduling.
+The planning flow requires a connected Google Calendar and does not substitute seeded demo events. The automation runs while the local server is running; overdue jobs are analyzed once after restart. Use the Connections page to pause or resume the Oracle loop. Later calendar changes can introduce conflicts, so review the calendar after scheduling.
+
+For a demo, choose **Previous week** in the Calendar Breather preview. PYTHIA replays that week using a read-only simulation; the suggested past breaks are not written to Google Calendar.

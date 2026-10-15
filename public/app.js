@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let data=null, googleState=null, oracleState=null, currentRun=null, pendingCalendarRun=null, calendarPlanMessages=[], activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
+let data=null, googleState=null, oracleState=null, currentRun=null, currentCalendarPlan=null, pendingCalendarRun=null, calendarPlanMessages=[], activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
 let oracleMessages=[];
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path, options={}) {
@@ -76,8 +76,8 @@ async function load(){data=await api(`/api/overview?userId=${activeUserId}&perio
 async function loadGoogleStatus(){
   const status=$('#google-status'),actions=$('#google-actions');if(!status||!actions)return;
   try{googleState=await api('/api/google/status');
-    if(googleState.connected){status.innerHTML=`<div class="connected-mark">✓</div><div><b>Google account connected</b><small>${esc(googleState.email)} · Calendar and Gmail</small></div>`;actions.innerHTML='<button class="btn" id="disconnect-google">Disconnect Google</button>';}
-    else if(googleState.configured){status.innerHTML='<div class="unconnected-mark">◌</div><div><b>Google is ready to connect</b><small>Consent will request Calendar event access and Gmail read-only access.</small></div>';actions.innerHTML='<a class="btn primary" href="/auth/google">Connect Google</a>';}
+    if(googleState.connected){const scopes=String(googleState.grantedScopes||'').split(/\s+/),missing=[];if(!scopes.includes('https://www.googleapis.com/auth/calendar.readonly'))missing.push('Calendar metadata read');if(!scopes.includes('https://www.googleapis.com/auth/calendar.events'))missing.push('Calendar events');if(!scopes.includes('https://www.googleapis.com/auth/gmail.readonly'))missing.push('Gmail read-only');status.innerHTML=`<div class="connected-mark">✓</div><div><b>Google account connected</b><small>${esc(googleState.email)}${missing.length?` · Missing permission: ${esc(missing.join(', '))}`:' · Calendar and Gmail permissions granted'}</small></div>`;actions.innerHTML='<a class="btn" href="/auth/google">Refresh Google permissions</a> <button class="btn" id="disconnect-google">Disconnect Google</button>';}
+    else if(googleState.configured){status.innerHTML='<div class="unconnected-mark">◌</div><div><b>Google is ready to connect</b><small>Consent will request Calendar metadata and event access, plus Gmail read-only access.</small></div>';actions.innerHTML='<a class="btn primary" href="/auth/google">Connect Google</a>';}
     else{status.innerHTML='<div class="unconnected-mark">◌</div><div><b>OAuth client credentials needed</b><small>Follow the one-time steps below, then restart the local server.</small></div>';actions.innerHTML='<code>cp .env.example .env</code>';}
   }catch(error){status.textContent=error.message;}
 }
@@ -88,15 +88,78 @@ async function loadCalendarPlans(){
     const {plans}=await api('/api/calendar/recurring');
     container.innerHTML=plans.length?plans.map(plan=>`<article class="calendar-plan-row"><div class="grow"><b>${esc(new Date(plan.start_at).toLocaleString([], {weekday:'long',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:plan.timezone}))} · ${esc(plan.timezone)}</b><small>${esc(plan.recurrence_rule.replace('RRULE:','').replaceAll(';',' · ').replace('FREQ=WEEKLY','Weekly'))}</small></div><button class="btn ghost" data-cancel-calendar-plan="${plan.id}">Cancel series</button></article>`).join(''):'<p class="empty-state">No recurring breaks scheduled yet.</p>';
     const pending=$('#calendar-pending');
-    if(pending){const {invitations}=await api('/api/calendar/pending');pending.innerHTML=invitations.length?invitations.map(invitation=>calendarInvitationCard(invitation)).join(''):'<p class="empty-state">No break invitations waiting. Your calendar can unclench.</p>'}
+    if(pending){const {invitations}=await api('/api/calendar/pending');pending.innerHTML=invitations.length?`<button type="button" class="btn primary invitation-bulk-accept" data-accept-all-invitations>Accept all pending breaks</button>${invitations.map(invitation=>calendarInvitationCard(invitation)).join('')}`:'<p class="empty-state">No break invitations waiting. Your calendar can unclench.</p>';bindInvitationActions(pending)}
   }catch(error){container.innerHTML=`<p class="empty-state">${esc(error.message)}</p>`}
+  await loadCalendarAutomation();
+}
+
+async function loadCalendarAutomation(){
+  const panel=$('#calendar-automation-status');if(!panel)return;
+  try{
+    const {automation}=await api('/api/calendar/automation');
+    if(!automation?.enabled){panel.innerHTML=`<div class="grow"><b>Oracle calendar loop is paused</b><small>Run Calendar Breather to start scheduled analysis.</small></div>${automation?'<button class="btn primary" data-calendar-automation="resume">Resume</button>':''}`;return}
+    const next=automation.next_run_at?new Date(automation.next_run_at).toLocaleString([], {weekday:'short',hour:'numeric',minute:'2-digit'}):'soon';
+    panel.innerHTML=`<div class="grow"><b>Oracle loop active · checking ${automation.cadence==='weekly'?'once a week':'once a day'}</b><small>Next pass ${esc(next)} · Oracle decides how many breaks fit the next seven days${automation.last_error?` · Last issue: ${esc(automation.last_error)}`:''}</small></div><button class="btn ghost" data-calendar-automation="pause">Pause</button>`;
+  }catch(error){panel.textContent=error.message}
 }
 
 function calendarInvitationCard(invitation,timezone=invitation.timezone){
   const time=new Date(invitation.start_at||invitation.start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:timezone});
   const id=invitation.invitationId||invitation.id;
   if(invitation.invitationStatus==='failed')return `<article class="calendar-plan-row"><div class="grow"><b>${esc(invitation.title)} · ${esc(time)}</b><small>Could not add this tentative hold: ${esc(invitation.invitationError||'Google Calendar error')}</small></div></article>`;
-  return `<article class="calendar-plan-row invitation-card"><div class="grow"><b>${esc(invitation.title)} · ${esc(time)}</b><small>${esc(invitation.reason||'A tiny pause, picked for you.')}</small></div><div class="invitation-actions"><button class="btn primary" data-calendar-response="accept" data-invitation-id="${id}">Accept</button><button class="btn ghost" data-calendar-response="decline" data-invitation-id="${id}">Decline</button></div></article>`;
+  return `<article class="calendar-plan-row invitation-card"><div class="grow"><b>${esc(invitation.title)} · ${esc(time)}</b><small>${esc(invitation.reason||'A tiny pause, picked for you.')}</small></div><div class="invitation-actions"><button type="button" class="btn primary" data-calendar-response="accept" data-invitation-id="${id}">Accept</button><button type="button" class="btn ghost" data-calendar-response="decline" data-invitation-id="${id}">Decline</button></div></article>`;
+}
+
+function bindInvitationActions(root){
+  root.querySelectorAll('[data-calendar-response]').forEach(button=>button.addEventListener('click',async()=>{
+    const row=button.closest('.calendar-plan-row'),actions=button.closest('.invitation-actions'),buttons=[...actions.querySelectorAll('button')];
+    buttons.forEach(item=>item.disabled=true);button.textContent='Saving…';
+    try{
+      await api(`/api/calendar/invitations/${button.dataset.invitationId}/respond`,{method:'POST',body:JSON.stringify({action:button.dataset.calendarResponse})});
+      row.remove();await loadCalendarPlans();toast(button.dataset.calendarResponse==='accept'?'Accepted · your calendar has the final word':'Declined · politely escaped the calendar');
+    }catch(error){
+      buttons.forEach(item=>item.disabled=false);button.textContent=button.dataset.calendarResponse==='accept'?'Accept':'Decline';
+      let feedback=actions.querySelector('.invitation-feedback');if(!feedback){feedback=document.createElement('small');feedback.className='invitation-feedback';actions.append(feedback)}feedback.textContent=error.message;
+    }
+  }));
+}
+
+async function acceptAllInvitations(button){
+  const root=button.closest('#calendar-pending')||button.closest('#run-result');if(!root)return;
+  const invitations=[...root.querySelectorAll('[data-calendar-response="accept"]')];if(!invitations.length){button.disabled=true;button.textContent='No pending breaks';return}
+  button.disabled=true;button.textContent=`Accepting 0 of ${invitations.length}…`;let accepted=0,failed=0;
+  for(const acceptButton of invitations){
+    const row=acceptButton.closest('.calendar-plan-row'),actions=acceptButton.closest('.invitation-actions'),decline=actions.querySelector('[data-calendar-response="decline"]');
+    actions.querySelectorAll('button').forEach(item=>item.disabled=true);
+    try{
+      await api(`/api/calendar/invitations/${acceptButton.dataset.invitationId}/respond`,{method:'POST',body:JSON.stringify({action:'accept'})});row.remove();accepted++;
+    }catch(error){
+      failed++;actions.querySelectorAll('button').forEach(item=>item.disabled=false);acceptButton.textContent='Accept';
+      let feedback=actions.querySelector('.invitation-feedback');if(!feedback){feedback=document.createElement('small');feedback.className='invitation-feedback';actions.append(feedback)}feedback.textContent=error.message;
+    }
+    button.textContent=`Accepting ${accepted+failed} of ${invitations.length}…`;
+  }
+  if(failed){button.disabled=false;button.textContent=`Retry ${failed} failed break${failed===1?'':'s'}`}
+  else button.remove();
+  if(root.id==='calendar-pending')await loadCalendarPlans();
+  if(accepted)toast(`Accepted ${accepted} break${accepted===1?'':'s'}${failed?` · ${failed} need attention`:''}`);
+}
+
+function calendarDayKey(value,timeZone,allDay=false){
+  if(allDay&&value?.date)return value.date;
+  const date=new Date(value?.dateTime||value);const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);const p=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day}`;
+}
+
+function renderWeekPreview(calendarEvents,proposals,timeZone,rangeStart=new Date(),week='current'){
+  const today=calendarDayKey(rangeStart,timeZone),[year,month,date]=today.split('-').map(Number),first=new Date(Date.UTC(year,month-1,date));
+  const days=Array.from({length:7},(_,index)=>{const d=new Date(first);d.setUTCDate(d.getUTCDate()+index);return d}).filter(d=>{const day=d.getUTCDay();return day>=1&&day<=5}).map(d=>d.toISOString().slice(0,10));
+  const items=[...(calendarEvents||[]).map(event=>({...event,kind:event.kind||'meeting'})),...(proposals||[]).filter(item=>item.invitationStatus!=='failed').map(item=>({...item,kind:'proposal',start:item.start,end:item.end}))];
+  const grouped=new Map(days.map(day=>[day,[]]));
+  for(const item of items){const key=calendarDayKey(item.start,timeZone,item.allDay);if(!grouped.has(key))continue;grouped.get(key).push(item)}
+  return `<section id="calendar-week-preview" class="calendar-week-preview"><div class="calendar-week-preview-top"><div><div class="eyebrow">${week==='previous'?'PREVIOUS WEEK · PREVIEW ONLY':'YOUR WORKWEEK · CALENDAR + PROPOSED BREAKS'}</div>${week==='previous'?'<small class="preview-only-note">A look-back simulation. These break suggestions are not added to your calendar.</small>':''}</div><div class="week-preview-controls"><button type="button" class="btn ${week==='current'?'primary':'ghost'}" data-week-preview="current">Upcoming</button><button type="button" class="btn ${week==='previous'?'primary':'ghost'}" data-week-preview="previous">Previous week</button></div></div><div class="calendar-week-grid" style="grid-template-columns:repeat(${days.length},minmax(116px,1fr))">${days.map(day=>{
+    const weekday=new Intl.DateTimeFormat([], {weekday:'short',timeZone:'UTC'}).format(new Date(`${day}T12:00:00Z`)),dateLabel=new Intl.DateTimeFormat([], {month:'short',day:'numeric',timeZone:'UTC'}).format(new Date(`${day}T12:00:00Z`)),events=grouped.get(day).sort((a,b)=>new Date(a.start?.dateTime||a.start?.date||a.start).getTime()-new Date(b.start?.dateTime||b.start?.date||b.start).getTime());
+    return `<div class="calendar-week-day"><header><b>${weekday}</b><small>${dateLabel}</small></header><div class="calendar-week-events">${events.length?events.map(item=>{const startValue=item.start?.dateTime||item.start,endValue=item.end?.dateTime||item.end,time=item.allDay?'All day':`${new Date(startValue).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',timeZone})}–${new Date(endValue).toLocaleTimeString([], {hour:'numeric',minute:'2-digit',timeZone})}`;return `<article class="calendar-week-event ${item.kind==='meeting'?'meeting-event':'break-event'}"><small>${esc(time)}${item.kind==='break'?' · PYTHIA':''}</small><b>${esc(item.title||'Calendar event')}</b>${item.kind==='proposal'?`<span>${esc(item.reason||'Tentative break · accept or decline below')}</span>`:''}</article>`}).join(''):'<p class="calendar-week-empty">Open day</p>'}</div></div>`;
+  }).join('')}</div></section>`;
 }
 
 async function loadOracleStatus(){
@@ -111,7 +174,8 @@ function oracleRecommendation(result){
   const rec=result.recommendation||{};
   if(rec.type==='solution'&&result.solution){
     const solution=result.solution;
-    return `<article class="oracle-rec"><div class="kind">${esc(solution.kind)}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p><small>${esc(rec.reason||'')} · ${Math.round(rec.confidence||0)}% confidence</small><div class="answer-actions">${solution.runnable?`<button class="button gold" data-run="${solution.id}" data-request="${result.requestId}">Run this solution →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div></article>`;
+    const details=Array.isArray(solution.details)&&solution.details.length?`<ul class="oracle-solution-details">${solution.details.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`:'';
+    return `<article class="oracle-rec"><div class="kind">${esc(solution.kind)}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p>${details}<small>${esc(rec.reason||'')} · ${Math.round(rec.confidence||0)}% confidence</small><div class="answer-actions">${solution.runnable?`<button class="button gold" data-run="${solution.id}" data-request="${result.requestId}">Run this solution →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div></article>`;
   }
   if(rec.type==='person'&&result.people?.length){
     return `<article class="oracle-rec"><div class="kind">RECOMMENDED COLLEAGUES</div><div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person)}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span></button>`).join('')}</div><small>${esc(rec.reason||'')}</small></article>`;
@@ -127,7 +191,7 @@ function renderOracleConversation(waiting=false){
   const thread=$('#answer');
   thread.hidden=false;
   thread.classList.add('oracle-thread');
-  thread.innerHTML=oracleMessages.map(message=>`<div class="oracle-message ${message.role}"><div class="oracle-role">${message.role==='user'?'YOU':'PYTHIA'}</div><div class="oracle-copy">${esc(message.content).replace(/\n/g,'<br>')}</div>${message.result?oracleRecommendation(message.result):''}</div>`).join('')+(waiting?'<div class="oracle-message assistant thinking"><div class="oracle-role">PYTHIA</div><div class="oracle-copy">Consulting the catalogue and expertise directory…</div></div>':'');
+  thread.innerHTML=oracleMessages.map(message=>`<div class="oracle-message ${message.role}"><div class="oracle-role">${message.role==='user'?'YOU':'PYTHIA'}${message.result?` · ${message.result.mode==='llm'?`LLM ${esc(message.result.model||'')}`:'LOCAL FALLBACK'}`:''}</div><div class="oracle-copy">${esc(message.content).replace(/\n/g,'<br>')}</div>${message.result?.fallbackReason?`<small class="oracle-fallback-note">LLM unavailable: ${esc(message.result.fallbackReason)}</small>`:''}${message.result?oracleRecommendation(message.result):''}</div>`).join('')+(waiting?'<div class="oracle-message assistant thinking"><div class="oracle-role">PYTHIA</div><div class="oracle-copy">Consulting the catalogue and expertise directory…</div></div>':'');
   thread.scrollIntoView({behavior:'smooth',block:'end'});
 }
 
@@ -152,38 +216,39 @@ async function connectStatusFromQuery(){const params=new URLSearchParams(locatio
 async function run(id,requestId){
   pendingCalendarRun={solutionId:Number(id),requestId:Number(requestId)||null};
   calendarPlanMessages=[];
-  $('#calendar-plan-note').value='';
   try{
     const {preferences}=await api('/api/calendar/preferences');
-    if(preferences){const form=$('#calendar-plan-form');for(const name of ['durationMinutes','activity','invitationsPerWeek','windowStart','windowEnd'])if(preferences[name]!=null&&form.elements[name])form.elements[name].value=preferences[name];form.querySelectorAll('[name="weekday"]').forEach(input=>input.checked=preferences.weekdays.includes(Number(input.value)))}
+    if(preferences){const form=$('#calendar-plan-form');for(const name of ['mode','cadence'])if(preferences[name]!=null&&form.elements[name])form.elements[name].value=preferences[name]}
   }catch{}
+  $('#calendar-plan-error').hidden=true;$('#calendar-plan-error').textContent='';
   $('#calendar-plan-dialog').showModal();
 }
 
 function renderCalendarPlan(result){
+  currentCalendarPlan=result;
   currentRun=result.runId;
   const timezone=result.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone;
   const proposals=result.proposals||[];
-  const proposalHtml=proposals.length?proposals.map(p=>calendarInvitationCard({...p,start_at:p.start,invitationId:p.id},timezone)).join(''):'<p class="empty-state">No suitable times showed up this week. Apparently even calendars need boundaries.</p>';
-  $('#run-title').textContent='A few little resets';
-  $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">YOUR CALENDAR · ${esc(timezone)} · ${result.planner.mode==='llm'?`SECONDSTACK ${esc(result.planner.model)}`:'LOCAL PLANNER'}</div><h2>${result.meetingCount} events checked</h2><div class="oracle-plan-answer">${esc(result.answer)}${result.planner.fallbackReason?`<small>Oracle fallback: ${esc(result.planner.fallbackReason)}</small>`:''}</div><div class="eyebrow meeting-heading">TENTATIVE HOLDS · ACCEPT OR DECLINE</div><div class="proposal-list">${proposalHtml}</div><button class="btn ghost" id="refine-calendar-plan">Adjust my reset settings</button><p class="analysis-disclaimer">These holds were added automatically as tentative private calendar events. Accept or decline here. Event titles, attendees, descriptions, and Gmail are not sent to the LLM.</p></div>`;
+  const proposalHtml=proposals.length?proposals.map(p=>calendarInvitationCard({...p,start_at:p.start,invitationId:p.id},timezone)).join(''):'<p class="empty-state">No additional break fits the next seven days. PYTHIA will check again on its next scheduled pass.</p>';
+  $('#run-title').textContent='The Oracle calendar loop';
+  const hasInvites=proposals.some(item=>item.invitationStatus==='invited');
+  $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">NEXT WORKDAYS · ROLLING SEVEN-DAY WINDOW · ${esc(timezone)} · ${result.planner.mode==='llm'?`SECONDSTACK ${esc(result.planner.model)}`:'LOCAL PLANNER'}</div><h2>${result.meetingCount} events analyzed · ${result.weeklyTarget} break${result.weeklyTarget===1?'':'s'} target this week</h2><div class="oracle-plan-answer">${esc(result.answer)}${result.planner.fallbackReason?`<small>Oracle fallback: ${esc(result.planner.fallbackReason)}</small>`:''}<small>Scheduled to re-analyze ${result.preferences.cadence==='weekly'?'once a week':'once a day'}. PYTHIA determines the total break count for the next seven days.</small></div>${renderWeekPreview(result.calendarEvents,result.proposals,timezone,result.range?.start||new Date())}<div id="current-holds"><div class="eyebrow meeting-heading">TENTATIVE HOLDS · ACCEPT OR DECLINE</div>${hasInvites?'<button type="button" class="btn primary invitation-bulk-accept" data-accept-all-invitations>Accept all proposed breaks</button>':''}<div class="proposal-list">${proposalHtml}</div></div><button class="btn ghost" id="refine-calendar-plan">Adjust my Oracle schedule</button><p class="analysis-disclaimer">Tentative private holds are added automatically and can be accepted or declined here. ${result.contextAnalysis?'You opted in to analyze related recent email snippets, meeting titles, and up to 90 days of prior meetings. Selected subjects, snippets, and sanitized meeting context are sent to SecondStack during each scheduled pass.':'Email and meeting details are not sent to the Oracle.'}</p></div>`;
+  bindInvitationActions($('#run-result'));
   view('sanctum');
 }
 
 async function planCalendar(event){
   event.preventDefault();
   if(!pendingCalendarRun)return;
-  const form=event.currentTarget,button=form.querySelector('[type="submit"]'),values=new FormData(form),note=String(values.get('note')||'').trim();
-  const weekdays=values.getAll('weekday').map(Number);
-  if(!weekdays.length){toast('Choose at least one weekday');return}
-  calendarPlanMessages.push({role:'user',content:note});
-  button.disabled=true;button.textContent='Finding a little breathing room…';
+  const form=event.currentTarget,button=form.querySelector('[type="submit"]'),values=new FormData(form),errorBox=$('#calendar-plan-error');
+  errorBox.hidden=true;errorBox.textContent='';
+  button.disabled=true;button.textContent='Consulting the Oracle…';
   try{
-    const result=await api('/api/calendar/plan-preview',{method:'POST',body:JSON.stringify({messages:calendarPlanMessages,preferences:{durationMinutes:Number(values.get('durationMinutes')),activity:values.get('activity'),invitationsPerWeek:Number(values.get('invitationsPerWeek')),maxPerDay:1,windowStart:values.get('windowStart'),windowEnd:values.get('windowEnd'),weekdays},timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+    const result=await api('/api/calendar/plan-preview',{method:'POST',body:JSON.stringify({messages:[],includeMeetingContext:values.get('includeMeetingContext')==='on',preferences:{mode:values.get('mode'),cadence:values.get('cadence')},timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
     calendarPlanMessages.push({role:'assistant',content:result.answer});
     renderCalendarPlan(result);$('#calendar-plan-dialog').close();await loadCalendarPlans();
-  }catch(error){calendarPlanMessages.pop();toast(error.message)}
-  finally{button.disabled=false;button.textContent='Set up my reset invitations'}
+  }catch(error){errorBox.textContent=error.message.includes('denied access')?`${error.message} In Connections, choose “Refresh Google permissions” and grant Calendar plus Gmail read-only access.`:error.message.includes('Connect your Google account')?`${error.message} Open Connections and choose Connect Google, then try again.`:error.message;errorBox.hidden=false}
+  finally{button.disabled=false;button.textContent='Start PYTHIA schedule'}
 }
 
 async function sendFeedback(button){if(!currentRun)return;try{await api(`/api/runs/${currentRun}/feedback`,{method:'POST',body:JSON.stringify({feedback:button.dataset.feedback,thanks:$('#thanks-note').value})});document.querySelectorAll('[data-feedback]').forEach(x=>x.disabled=true);toast(button.dataset.feedback==='helped'?'Feedback saved · author received laurels':'Feedback saved');await load()}catch(error){toast(error.message)}}
@@ -203,11 +268,13 @@ document.addEventListener('click',async event=>{
   if(event.target.closest('[data-action="share"]')){$('#share-dialog').showModal();return}
   if(event.target.closest('#share-dialog .close')){$('#share-dialog').close();return}
   const runner=event.target.closest('[data-run]');if(runner){run(runner.dataset.run,runner.dataset.request);return}
-  if(event.target.closest('#refine-calendar-plan')){$('#calendar-plan-note').value='';$('#calendar-plan-dialog').showModal();$('#calendar-plan-note').focus();return}
+  if(event.target.closest('#refine-calendar-plan')){$('#calendar-plan-error').hidden=true;$('#calendar-plan-dialog').showModal();return}
   const feedback=event.target.closest('[data-feedback]');if(feedback){sendFeedback(feedback);return}
   const disc=event.target.closest('#disconnect-google');if(disc){try{await api('/api/google/disconnect',{method:'POST',body:'{}'});await loadGoogleStatus();toast('Google disconnected')}catch(error){toast(error.message)}return}
   const cancelPlan=event.target.closest('[data-cancel-calendar-plan]');if(cancelPlan){cancelPlan.disabled=true;try{await api(`/api/calendar/recurring/${cancelPlan.dataset.cancelCalendarPlan}`,{method:'DELETE'});await loadCalendarPlans();toast('Recurring break series canceled')}catch(error){cancelPlan.disabled=false;toast(error.message)}return}
-  const invitationAction=event.target.closest('[data-calendar-response]');if(invitationAction){invitationAction.disabled=true;try{await api(`/api/calendar/invitations/${invitationAction.dataset.invitationId}/respond`,{method:'POST',body:JSON.stringify({action:invitationAction.dataset.calendarResponse})});invitationAction.closest('.calendar-plan-row')?.remove();await loadCalendarPlans();toast(invitationAction.dataset.calendarResponse==='accept'?'Accepted · your calendar has the final word':'Declined · politely escaped the calendar');return}catch(error){invitationAction.disabled=false;toast(error.message);return}}
+  const automation=event.target.closest('[data-calendar-automation]');if(automation){automation.disabled=true;try{await api('/api/calendar/automation',{method:'POST',body:JSON.stringify({action:automation.dataset.calendarAutomation})});await loadCalendarAutomation();toast(automation.dataset.calendarAutomation==='pause'?'Oracle calendar loop paused':'Oracle calendar loop resumed')}catch(error){automation.disabled=false;toast(error.message)}return}
+  const weekPreview=event.target.closest('[data-week-preview]');if(weekPreview){const week=weekPreview.dataset.weekPreview,section=$('#calendar-week-preview'),plan=currentCalendarPlan;if(!section||!plan)return;weekPreview.disabled=true;$('#current-holds').hidden=week==='previous';if(week==='current'){section.outerHTML=renderWeekPreview(plan.calendarEvents,plan.proposals,plan.timeZone,plan.range?.start||new Date());return}section.innerHTML='<p class="calendar-preview-loading">PYTHIA is replaying last week’s calendar…</p>';try{const result=await api('/api/calendar/preview-week',{method:'POST',body:JSON.stringify({week:'previous',includeMeetingContext:plan.contextAnalysis,preferences:{mode:plan.preferences.mode,cadence:plan.preferences.cadence},timeZone:plan.timeZone})});$('#calendar-week-preview').outerHTML=renderWeekPreview(result.calendarEvents,result.proposals,result.timeZone,result.range.start,'previous')}catch(error){$('#calendar-week-preview').innerHTML=`<div class="calendar-preview-error">${esc(error.message)} <button class="btn ghost" data-week-preview="current">Back to upcoming</button></div>`}return}
+  const acceptAll=event.target.closest('[data-accept-all-invitations]');if(acceptAll){await acceptAllInvitations(acceptAll);return}
   if(event.target.closest('#refresh-calendar-plans')){await loadCalendarPlans();return}
   const add=event.target.closest('#add-selected-breaks');if(add){
     const proposalIds=[...document.querySelectorAll('.proposal input:checked:not(:disabled)')].map(i=>Number(i.value)).filter(Number.isFinite);
