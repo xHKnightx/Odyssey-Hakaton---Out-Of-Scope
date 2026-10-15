@@ -48,9 +48,9 @@ The Google calendar/mail connection (`/auth/google`, same redirect URI) is a sep
 
 **Gate behaviour.** Without a session, `/api/*` answers `401` (`{"code":"auth_required"}`); `GET /login.html`, `/login.js`, `/style.css` and `/favicon.ico` stay public; other page and `/auth/*` GETs redirect to `/login.html`. State-changing requests carrying `Sec-Fetch-Site: cross-site`, or an `Origin` that differs from `Host`, get `403`.
 
-**Users.** `ensureAuthSchema` adds `email`, `google_sub`, `avatar_url`, `last_login_at` and `profile_completed` to `users` (unique indexes on `lower(email)` and `google_sub`) and creates `sessions`; existing databases keep all their records, and existing profiles stay complete. A Google sign-in is linked to a profile in this order: `google_sub`, then email, then an unclaimed seed profile with the same normalized name, otherwise a new profile is created with placeholder role/team/skills and `profile_completed=0`. The UI then opens a "Welcome" dialog until the person saves their role and skills.
+**Users.** `ensureAuthSchema` adds `email`, `google_sub`, `avatar_url`, `last_login_at` and `profile_completed` to `users` (unique indexes on `lower(email)` and `google_sub`) and creates `sessions`; existing databases keep all their records, and existing profiles stay complete. A Google sign-in is linked to a profile in this order: `google_sub`, then email, then an unclaimed seed profile with the same normalized name, otherwise a new profile is created with placeholder role/team/areas of expertise and `profile_completed=0`. The UI then opens a "Welcome" dialog until the person saves their role and areas of expertise. The SQLite column remains `users.skills` for backward compatibility; product language and LLM contracts call these values **areas of expertise**.
 
-The first-login dialog includes an optional LLM drafting step. `POST /api/profile/analyze` accepts a free-text professional introduction and returns validated role, team/practice, skills, and experience fields. The response only prefills the form: the introduction is not stored, the draft does not change SQLite, and the person must review and submit the normal profile form. Onboarding never publishes catalogue solutions; reusable tools and agents require the separate Share Wisdom review flow.
+The first-login dialog includes an optional LLM drafting step. `POST /api/profile/analyze` accepts a free-text professional introduction and returns validated role, team/practice, areas of expertise, and experience fields. The response only prefills the form: the introduction is not stored, the draft does not change SQLite, and the person must review and submit the normal profile form. Onboarding never publishes catalogue solutions; reusable tools and agents require the separate Share Wisdom review flow.
 
 **Google Calendar and Gmail tokens** are stored per user in `data/google-tokens/<user id>.json` (mode `0600`, never committed). A token is released only to the account it was issued for: if the signed-in profile has an email that differs from the token's, the token is ignored, which also protects against ids being reassigned after `npm run db:reset`. Connecting a Google account other than the one signed in is refused and the grant is revoked. A pre-auth `data/google-token.json` is adopted by the user whose email matches.
 
@@ -90,11 +90,11 @@ The model cannot select arbitrary records. Returned solution and person IDs are 
 
 ## Share Wisdom flow
 
-Share Wisdom mirrors the prototype's review-first flow. `POST /api/share/analyze` sends the colleague's free-text offering to the configured SecondStack chat model. `lib/wisdom.mjs` asks for bounded structured JSON containing **profile skills** (human capabilities), experience evidence, and **reusable assets** (`agent`, `automation`, `guide`, `tool`, `knowledge`, or a packaged `skill`). In the UI a catalogue `skill` is labelled **Playbook / Agent skill** so it cannot be confused with a person's skill. The server validates and truncates every model-produced field before returning a review draft. If the model is unavailable, a deterministic local extractor provides a clearly labelled fallback draft.
+Share Wisdom mirrors the prototype's review-first flow. `POST /api/share/analyze` sends the colleague's free-text offering to the configured SecondStack chat model. `lib/wisdom.mjs` asks for bounded structured JSON containing **areas of expertise** (human capabilities), experience evidence, and **reusable assets** (`agent`, `automation`, `guide`, `tool`, `knowledge`, or a packaged `skill`). The LLM uses the unambiguous `expertiseAreas` field; the application maps it to the existing internal `skills` field. In the UI a catalogue `skill` is labelled **Playbook / Agent skill** so it cannot be confused with a person's expertise. The server validates and truncates every model-produced field before returning a review draft. If the model is unavailable, a deterministic local extractor provides a clearly labelled fallback draft.
 
 A reusable asset requires both an explicit creation/use statement and a concrete artifact or repeatable workflow in the source message. Every model-produced asset must also carry a verbatim evidence quote that occurs in that message. The server enforces these rules again when saving, so a statement such as “I can vibe code” may add the profile skill `Vibe coding` but cannot publish a catalogue asset.
 
-Nothing is written during analysis. The colleague can edit or deselect every extracted item. `POST /api/share` then stores the original contribution, merges confirmed skills and experience into the signed-in user's profile, and inserts confirmed non-duplicate solutions into the local catalogue. Newly shared agents are catalogue records only and remain non-runnable until a real executor is integrated. The updated profile and new solutions are immediately added to FTS5 and, when configured, their embeddings are refreshed.
+Nothing is written during analysis. The colleague can edit or deselect every extracted item. `POST /api/share` then stores the original contribution, merges confirmed areas of expertise and experience into the signed-in user's profile, and inserts confirmed non-duplicate solutions into the local catalogue. Newly shared agents are catalogue records only and remain non-runnable until a real executor is integrated. The updated profile and new solutions are immediately added to FTS5 and, when configured, their embeddings are refreshed.
 
 ## Hybrid candidate retrieval
 
@@ -108,7 +108,7 @@ Employee embedding documents contain only:
 
 - role;
 - team;
-- skills;
+- areas of expertise (stored in the `skills` column);
 - professional experience description.
 
 They deliberately exclude name, initials, location, availability, contact details, rewards, and activity history. Solution documents contain title, type, summary, and runnable status.
@@ -133,9 +133,9 @@ Every embedding row records its entity type, entity ID, model, dimensions, conte
 An employee is re-indexed when:
 
 - a profile is created with `POST /api/people`;
-- a skill is confirmed with `POST /api/skills/confirm`;
-- role, team, skills, or experience changes through `PATCH /api/people/:id`.
-- confirmed Share Wisdom skills or experience are saved with `POST /api/share`.
+- an area of expertise is confirmed with `POST /api/skills/confirm`;
+- role, team, areas of expertise, or experience changes through `PATCH /api/people/:id`.
+- confirmed Share Wisdom expertise or experience is saved with `POST /api/share`.
 
 A solution is indexed when it is confirmed through Share Wisdom. Exact title matches already in the catalogue are reported as duplicates and are not inserted again.
 
@@ -143,11 +143,11 @@ At startup, all FTS5 rows are refreshed. Embeddings are requested only when the 
 
 ## Privacy boundary
 
-Names remain in local SQLite and are never included in employee embedding text or in the LLM candidate prompt. The LLM receives a candidate ID, role, team, skills, experience, and retrieval scores. After it returns validated `peopleIds`, the server resolves those IDs to names locally for display.
+Names remain in local SQLite and are never included in employee embedding text or in the LLM candidate prompt. The LLM receives a candidate ID, role, team, `expertiseAreas`, experience, and retrieval scores. After it returns validated `peopleIds`, the server resolves those IDs to names locally for display.
 
 Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
 
-The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and skills but not the person's name or account identifiers. An onboarding introduction is sent only when the person explicitly clicks **Extract with Pythia**; it is used to draft the form and is not stored. Profile role, team, skills, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
+The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. An onboarding introduction is sent only when the person explicitly clicks **Extract with Pythia**; it is used to draft the form and is not stored. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
 

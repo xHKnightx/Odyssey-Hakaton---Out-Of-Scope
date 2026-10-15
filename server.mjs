@@ -221,7 +221,7 @@ async function route(req, res) {
       if(id!==currentUser()?.id)return json(res,403,{error:'You can only edit your own profile.'});
       const b=await body(req),title=String(b.title??existing.title??'').trim(),team=String(b.team??existing.team??'').trim(),experience=String(b.experience??existing.experience??'').trim();
       const skills=b.skills==null?String(existing.skills||'').split(',').map(s=>s.trim()).filter(Boolean):[...new Set((Array.isArray(b.skills)?b.skills:String(b.skills).split(/[\n,]/)).map(s=>String(s).trim()).filter(Boolean))];
-      if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one skill are required.'});
+      if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one area of expertise are required.'});
       if(title.length>120||team.length>80||experience.length>1200||skills.length>20||skills.some(skill=>skill.length>60))return json(res,400,{error:'One or more profile fields exceed the allowed length.'});
       db.prepare('UPDATE users SET title=?,team=?,skills=?,experience=?,profile_completed=1 WHERE id=?').run(title,team,skills.join(', '),experience,id);
       const searchIndex=await retrieval.indexPerson(id).catch(error=>({indexed:0,mode:'exact',error:error.message}));

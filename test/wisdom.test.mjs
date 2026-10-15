@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyzeProfile, analyzeWisdom, hasShareableArtifact, validateProfileAnalysis, validateWisdomAnalysis } from '../lib/wisdom.mjs';
 
-test('wisdom analysis keeps bounded profile skills, experience, and reusable assets',()=>{
+test('wisdom analysis keeps bounded areas of expertise, experience, and reusable assets',()=>{
   const result=validateWisdomAnalysis({
-    headline:'Useful work',summary:'Review it',skills:['Salesforce','Salesforce','Data quality'],
+    headline:'Useful work',summary:'Review it',expertiseAreas:['Salesforce','Salesforce','Data quality'],
     experience:[{title:'Led a migration',details:'40,000 accounts'}],
     solutions:[{title:'Duplicate Account Cleaner',kind:'agent',summary:'Finds likely duplicate accounts.',runnable:true,minutesSaved:45}]
   });
@@ -34,7 +34,7 @@ test('a human capability never becomes a reusable asset without an explicit arti
   assert.ok(result.skills.includes('Vibe coding'));
   assert.equal(result.solutions.length,0);
   assert.equal(hasShareableArtifact(text),false);
-  const guarded=validateWisdomAnalysis({profileSkills:['Vibe coding'],solutions:[{title:'Vibe coding skill',kind:'skill',summary:'Builds prototypes',evidence:'Я умею вайбкодить'}]},{sourceText:text});
+  const guarded=validateWisdomAnalysis({expertiseAreas:['Vibe coding'],solutions:[{title:'Vibe coding skill',kind:'skill',summary:'Builds prototypes',evidence:'Я умею вайбкодить'}]},{sourceText:text});
   assert.equal(guarded.solutions.length,0);
   assert.equal(hasShareableArtifact('Я создала инструкцию для агента, которая собирает прототип.'),true);
   if(previous.base)process.env.LLM_BASE_URL=previous.base;if(previous.model)process.env.LLM_MODEL=previous.model;
@@ -43,7 +43,7 @@ test('a human capability never becomes a reusable asset without an explicit arti
 test('profile analysis returns editable profile fields without catalogue solutions',async()=>{
   const previous={base:process.env.LLM_BASE_URL,model:process.env.LLM_MODEL};
   delete process.env.LLM_BASE_URL;delete process.env.LLM_MODEL;
-  const validated=validateProfileAnalysis({title:'CRM Architect',team:'CRM',skills:['Salesforce','Salesforce'],experience:'Led CRM migrations.'});
+  const validated=validateProfileAnalysis({title:'CRM Architect',team:'CRM',expertiseAreas:['Salesforce','Salesforce'],experience:'Led CRM migrations.'});
   assert.deepEqual(validated.skills,['Salesforce']);
   const result=await analyzeProfile('I lead Salesforce CRM migrations and improve data quality.');
   assert.equal(result.mode,'local');

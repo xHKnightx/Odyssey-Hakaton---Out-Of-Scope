@@ -80,7 +80,7 @@
     $('#profile-ai-status').textContent = 'Nothing is saved until you review and submit the profile.';
     $('#create-profile-dialog h2').textContent = me.profileComplete ? 'Your profile' : 'Welcome to PYTHIA';
     $('#create-profile-dialog .profile-form-intro').textContent = me.profileComplete
-      ? 'Keep your role and skills current so colleagues can find you.'
+      ? 'Keep your role and areas of expertise current so colleagues can find you.'
       : 'Tell colleagues what you do and what you know. You can change this at any time.';
   }
 
