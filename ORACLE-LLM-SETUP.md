@@ -4,19 +4,19 @@ Oracle can use any gateway that implements the OpenAI-compatible `POST /chat/com
 
 ## Configure
 
-Copy `.env.example` to `.env` and set:
+Copy `.env.example` to `.env.local` and set:
 
 ```dotenv
-LLM_BASE_URL=https://your-gateway.example/v1
+LLM_BASE_URL=https://secondstack.t1a.io/gateway/api/v1
 LLM_API_KEY=replace-with-a-local-secret
 LLM_MODEL=replace-with-a-chat-model
-LLM_PROVIDER_NAME=SecondGate
+LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
 ```
 
-`LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env`.
+`LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env.local`. When both files exist, `.env.local` overrides `.env`.
 
-Restart the app after changing `.env`:
+Restart the app after changing `.env.local`:
 
 ```sh
 npm start

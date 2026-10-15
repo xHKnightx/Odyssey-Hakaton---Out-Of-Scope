@@ -12,13 +12,15 @@ import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
-try {
-  const envText = await readFile(join(root, '.env'), 'utf8');
-  for (const line of envText.split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
-  }
-} catch (error) { if (error.code !== 'ENOENT') throw error; }
+for (const envFile of ['.env', '.env.local']) {
+  try {
+    const envText = await readFile(join(root, envFile), 'utf8');
+    for (const line of envText.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
+    }
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
 await mkdir(join(root, 'data'), { recursive: true });
 const db = new DatabaseSync(join(root, 'data', 'pythia.db'));
 const all = (sql, ...args) => db.prepare(sql).all(...args);
