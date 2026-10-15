@@ -87,7 +87,7 @@ async function loadOracleStatus(){
   try{
     oracleState=await api('/api/oracle/status');
     const hint=$('#seek-form .hint');
-    if(hint)hint.textContent=oracleState.configured?'Oracle connected · Powered by SecondStack':'Oracle is using local search';
+    if(hint)hint.textContent=`${oracleState.configured?'Oracle connected · SecondStack':'Local search'} · Enter to send · Shift+Enter for a new line`;
   }catch(error){oracleState={configured:false};}
 }
 
@@ -243,6 +243,12 @@ document.addEventListener('click',async event=>{
 });
 
 $('#people-search').addEventListener('input',renderDirectory);
+$('#question').addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.repeat)return;
+  event.preventDefault();
+  const form=event.currentTarget.form,button=form?.querySelector('button[type="submit"]');
+  if(form&&button&&!button.disabled)form.requestSubmit(button);
+});
 $('#seek-form').addEventListener('submit',async event=>{
   event.preventDefault();const button=event.currentTarget.querySelector('button'),input=$('#question'),text=input.value.trim();if(!text)return;
   oracleMessages.push({role:'user',content:text});input.value='';button.disabled=true;button.textContent='Consulting…';renderOracleConversation(true);
