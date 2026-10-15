@@ -138,7 +138,6 @@ function showSeekState(name){
   const states=['seek-home','seek-consult','seek-results','share-consult','share-results'];
   const active=name.includes('-')?name:`seek-${name}`;
   for(const state of states)$(`#${state}`).hidden=state!==active;
-  document.querySelector('main>.notice').hidden=name!=='home';
   if(active==='seek-consult')setTimeout(()=>$('#question').focus({preventScroll:true}),0);
   if(active==='share-consult')setTimeout(()=>$('#share-text').focus({preventScroll:true}),0);
   // State changes can dramatically shorten the page. Reset the previous
