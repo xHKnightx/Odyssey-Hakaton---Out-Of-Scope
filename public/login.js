@@ -26,7 +26,7 @@ async function init() {
     google.setAttribute('aria-disabled', 'true');
     $('#login-note').textContent = 'Google sign-in is not configured: add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env.';
   } else {
-    $('#login-note').textContent = `Only ${config.allowedDomains.map(domain => `@${domain}`).join(', ')} accounts can sign in.`;
+    $('#login-note').textContent = 'Exclusively for T1Aers.';
   }
 
   if (!config.devLogin) return;
