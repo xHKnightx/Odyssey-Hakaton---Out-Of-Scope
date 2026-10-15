@@ -309,10 +309,15 @@ async function route(req, res) {
   catch { json(res,404,{error:'Not found'}); }
 }
 
-try {
-  const indexed=await retrieval.reindexAll();
-  console.log(`Search index ready: ${indexed.people.indexed} people and ${indexed.solutions.indexed} solutions embedded; mode=${indexed.people.mode}.`);
-} catch(error) {
-  console.error(`Embedding backfill failed; exact local search remains available: ${error.message}`);
+if (process.env.PYTHIA_INIT_ONLY === '1') {
+  db.close();
+  console.log('PYTHIA database initialized from the current seed.');
+} else {
+  try {
+    const indexed=await retrieval.reindexAll();
+    console.log(`Search index ready: ${indexed.people.indexed} people and ${indexed.solutions.indexed} solutions embedded; mode=${indexed.people.mode}.`);
+  } catch(error) {
+    console.error(`Embedding backfill failed; exact local search remains available: ${error.message}`);
+  }
+  createServer((req,res)=>route(req,res).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));
 }
-createServer((req,res)=>route(req,res).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));

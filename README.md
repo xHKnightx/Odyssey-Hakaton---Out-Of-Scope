@@ -10,7 +10,15 @@ Requires Node.js 22.13 or newer.
 npm start
 ```
 
-Open <http://localhost:3000>. The SQLite database is created at `data/pythia.db` on first launch and seeded with demo people, solutions, requests, and contribution history. Remove `data/pythia.db` to reset the demo.
+Open <http://localhost:3000>. The SQLite database is created at `data/pythia.db` on first launch and seeded with demo people, solutions, requests, and contribution history.
+
+For a clean demo database, stop the application and run:
+
+```sh
+npm run db:reset
+```
+
+The command archives the previous SQLite files under `data/backups/`, then creates a fresh database from the current versioned seed. Start the application normally afterward.
 
 The MVP includes Oracle search/chat, a Calendar Breather run, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. Oracle can use an OpenAI-compatible LLM gateway, Calendar/Gmail can use Google OAuth, and both retain local demo fallbacks.
 

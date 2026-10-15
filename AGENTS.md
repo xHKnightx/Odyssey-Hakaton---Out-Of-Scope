@@ -36,6 +36,7 @@ Keep the documentation synchronized in the same commit as the code change:
 
 - Use Node.js 22.13 or newer.
 - Start the application with `npm start` or use `npm run dev` while developing.
+- For a clean database, stop the running application and use `npm run db:reset`. The command archives the previous SQLite files under `data/backups/` and recreates `data/pythia.db` from the current seed.
 - Run `npm test` before committing. Add or update tests for behavior changes where practical.
 - Run `git diff --check` and review `git status` before committing and before pushing.
 - Verify affected user flows locally at `http://localhost:3000`, especially when changing UI, API responses, Oracle retrieval, or integrations.
@@ -48,6 +49,16 @@ Keep the documentation synchronized in the same commit as the code change:
 - Do not commit the local SQLite database or other contents of `data/`.
 - Employee names stay local in Oracle retrieval. Preserve the privacy boundary documented in the current architecture unless a reviewed design explicitly changes it.
 - Preserve user work and unrelated local changes. Do not delete, reset, or overwrite files merely to obtain a clean working tree.
+
+## Seed data
+
+- [`seed/mockup-seed.json`](./seed/mockup-seed.json) is the source of truth for shared demo people, solutions, requests, Pantheon entries, and gratitude. Do not use a developer's existing `data/pythia.db` as seed input.
+- Keep seed changes deterministic and idempotent: applying the same seed more than once must not duplicate records or rewards.
+- Increase the seed's top-level `version` whenever a seed change must be applied to existing local databases. Do not bump it for formatting-only edits.
+- Seed migrations must preserve user-created records and activity unless a deliberately destructive reset was requested.
+- Match or upsert seeded entities through stable identifiers. The current implementation uses person names, solution titles, and request text; do not casually rename these identity fields without handling the old value or adding a migration.
+- When changing the seed, verify both paths: starting with a newly reset database and starting with an existing database from the previous seed version.
+- Keep seed counts and important demo assumptions documented when they affect a user flow, implementation plan, or architecture decision.
 
 ## Definition of done
 
