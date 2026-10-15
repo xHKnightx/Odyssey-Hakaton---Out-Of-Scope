@@ -38,7 +38,7 @@ function renderDirectory(){
     return matchesFilter&&(!q||haystack.includes(q));
   });
   $('#people-result-count').textContent=`${rows.length} ${rows.length===1?'colleague':'colleagues'}${q?` matching “${$('#people-search').value.trim()}”`:''}`;
-  $('#people-directory').innerHTML=rows.map(p=>`<button class="drow person-link" data-person="${p.id}" aria-label="View ${esc(p.name)}’s profile"><span class="person-summary">${avatar(p)}<span class="person-main"><b>${esc(p.name)}</b><small>${esc(p.title)} · ${esc(p.team)} · ${esc(p.location||'')}</small></span></span><span class="cover">${String(p.skills).split(',').map(s=>`<span class="chip">${esc(s.trim())}</span>`).join('')}</span><span class="frow-go" aria-hidden="true">›</span></button>`).join('')||'<p class="empty-state">No one matches yet. Try a broader area of expertise.</p>';
+  $('#people-directory').innerHTML=rows.map(p=>`<button class="drow person-link" data-person="${p.id}" aria-label="View ${esc(p.name)}’s profile"><span class="person-summary">${avatar(p)}<span class="person-main"><b>${esc(p.name)}</b><small>${esc(p.title)} · ${esc(p.team)} · ${esc(p.location||'')}</small></span></span><span class="cover">${String(p.skills).split(',').map(s=>`<span class="chip">${esc(s.trim())}</span>`).join('')}</span></button>`).join('')||'<p class="empty-state">No one matches yet. Try a broader area of expertise.</p>';
 }
 function renderExpertise(){
   const me=data.people.find(p=>p.id===data.activeUserId)||data.people[0];
