@@ -15,6 +15,7 @@ This directory is the entry point for project documentation. The root [`README.m
 
 ## Implementation plans
 
+- [`CALENDAR-FUNCTIONALITY-PLAN.md`](./Plans/CALENDAR-FUNCTIONALITY-PLAN.md) — plan for preference-aware recovery breaks, recurring calendar events, and optional scheduled analysis jobs.
 - [`EXPERTISE-IMPLEMENTATION-PLAN.md`](./Plans/EXPERTISE-IMPLEMENTATION-PLAN.md) — Expertise directory gap audit and implementation log.
 - [`GAMIFICATION-IMPLEMENTATION-PLAN.md`](./Plans/GAMIFICATION-IMPLEMENTATION-PLAN.md) — gamification implementation audit and rollout notes.
 - [`PANTHEON-IMPLEMENTATION-PLAN.md`](./Plans/PANTHEON-IMPLEMENTATION-PLAN.md) — Pantheon mockup comparison and implementation log.
