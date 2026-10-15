@@ -8,6 +8,9 @@ import { randomBytes } from 'node:crypto';
 import { GOOGLE_SCOPES, googleConfigured, googleRedirectUri, googleAuthorizationUrl, exchangeGoogleCode, readGoogleToken, removeGoogleToken, googleApi } from './lib/google.mjs';
 import { analyzeCalendar, makeDemoCalendar } from './lib/calendar.mjs';
 import { createGamification } from './lib/gamification.mjs';
+import { createAuth } from './lib/auth/index.mjs';
+import { currentUser } from './lib/auth/context.mjs';
+import { saveOwnProfile } from './lib/auth/profile.mjs';
 import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
 
@@ -41,6 +44,7 @@ const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(c =
 for (const [name,type] of [['initials','TEXT'],['color','TEXT'],['location','TEXT'],['availability','TEXT'],['experience','TEXT']]) if (!userColumns.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
 const wisdomColumns = new Set(db.prepare('PRAGMA table_info(wisdom_events)').all().map(c => c.name));
 for (const [name,type] of [['actor_id','INTEGER'],['reference_id','INTEGER'],['impact_minutes','INTEGER NOT NULL DEFAULT 0']]) if (!wisdomColumns.has(name)) db.exec(`ALTER TABLE wisdom_events ADD COLUMN ${name} ${type}`);
+const auth = createAuth(db);
 const count = db.prepare('SELECT COUNT(*) n FROM users').get().n;
 if (!count) {
   const user = db.prepare('INSERT INTO users(name,title,team,skills,honorific) VALUES(?,?,?,?,?)');
@@ -111,7 +115,7 @@ const json = (res, code, value) => { res.writeHead(code, { 'content-type':'appli
 async function body(req) { let raw=''; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; }
 const oauthStates = new Map();
 const redirect = (res, location) => { res.writeHead(302, { location }); res.end(); };
-const resolveUserId = raw => { if(raw==null||raw==='')return 1; const id=Number(raw); return Number.isInteger(id)&&id>0&&one('SELECT id FROM users WHERE id=?',id)?id:null; };
+const resolveUserId = () => currentUser()?.id ?? null; // the actor is the signed-in user; any userId sent by the client is ignored
 function roman(value){let number=value,output='';for(const [n,symbol] of [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']])while(number>=n){output+=symbol;number-=n}return output||'I'}
 function pantheonRows(period='q'){
   const periodClause=period==='m'?"date(w.created_at)>=date('now','start of month')":period==='q'?"date(w.created_at)>=date('now','start of year',printf('+%d months',((cast(strftime('%m','now') as integer)-1)/3)*3))":'1=1';
@@ -187,26 +191,20 @@ async function route(req, res) {
       return json(res, 200, { activeUserId,people,pantheon,gratitude,myStanding,mySkills:active?.skills?.split(',').map(s=>s.trim())||[],solutions:all('SELECT s.*,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id ORDER BY s.id'),requests:all('SELECT r.*,u.name asker FROM requests r JOIN users u ON u.id=r.user_id ORDER BY r.id DESC'),events:all('SELECT w.*,u.name FROM wisdom_events w JOIN users u ON u.id=w.user_id ORDER BY w.id DESC LIMIT 10'),runs:all('SELECT r.*,s.title solution,u.name FROM runs r JOIN solutions s ON s.id=r.solution_id JOIN users u ON u.id=s.owner_id ORDER BY r.id DESC LIMIT 6') });
     }
     if (req.method === 'POST' && url.pathname === '/api/people') {
-      const b=await body(req), name=String(b.name||'').trim(), title=String(b.title||'').trim(), team=String(b.team||'').trim();
-      const location=String(b.location||'').trim(), availability=String(b.availability||'').trim(), experience=String(b.experience||'').trim();
-      const skills=[...new Set((Array.isArray(b.skills)?b.skills:String(b.skills||'').split(/[\n,]/)).map(s=>String(s).trim()).filter(Boolean))];
-      if(!name||!title||!team||!skills.length) return json(res,400,{error:'Name, role, team, and at least one skill are required.'});
-      if(name.length>100||title.length>120||team.length>80||location.length>100||availability.length>180||experience.length>1200||skills.length>20||skills.some(s=>s.length>60)) return json(res,400,{error:'One or more profile fields exceed the allowed length.'});
-      if(one('SELECT id FROM users WHERE lower(name)=lower(?)',name)) return json(res,409,{error:'A profile with this name already exists.'});
-      const colors=['#d9b6e8','#f7a072','#8fd3c1','#9cc4ff','#ffd27a','#c9a7ff','#e9a1c7','#9fe0d0'];
-      const initials=name.split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase();
-      const result=db.prepare('INSERT INTO users(name,title,team,skills,initials,color,location,availability,experience) VALUES(?,?,?,?,?,?,?,?,?)').run(name,title,team,skills.join(', '),initials,colors[name.length%colors.length],location,availability,experience);
-      const personId=Number(result.lastInsertRowid),searchIndex=await retrieval.indexPerson(personId).catch(error=>({indexed:0,mode:'exact',error:error.message}));
-      return json(res,201,{ok:true,person:one('SELECT * FROM users WHERE id=?',personId),searchIndex});
+      const saved=saveOwnProfile(db,currentUser(),await body(req));
+      if(saved.error) return json(res,saved.status,{error:saved.error});
+      const searchIndex=await retrieval.indexPerson(saved.person.id).catch(error=>({indexed:0,mode:'exact',error:error.message}));
+      return json(res,saved.status,{ok:true,person:saved.person,searchIndex});
     }
     if(req.method==='PATCH'&&url.pathname.startsWith('/api/people/')){
       const id=Number(url.pathname.split('/')[3]),existing=one('SELECT * FROM users WHERE id=?',id);
       if(!existing)return json(res,404,{error:'Colleague profile not found.'});
+      if(id!==currentUser()?.id)return json(res,403,{error:'You can only edit your own profile.'});
       const b=await body(req),title=String(b.title??existing.title??'').trim(),team=String(b.team??existing.team??'').trim(),experience=String(b.experience??existing.experience??'').trim();
       const skills=b.skills==null?String(existing.skills||'').split(',').map(s=>s.trim()).filter(Boolean):[...new Set((Array.isArray(b.skills)?b.skills:String(b.skills).split(/[\n,]/)).map(s=>String(s).trim()).filter(Boolean))];
       if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one skill are required.'});
       if(title.length>120||team.length>80||experience.length>1200||skills.length>20||skills.some(skill=>skill.length>60))return json(res,400,{error:'One or more profile fields exceed the allowed length.'});
-      db.prepare('UPDATE users SET title=?,team=?,skills=?,experience=? WHERE id=?').run(title,team,skills.join(', '),experience,id);
+      db.prepare('UPDATE users SET title=?,team=?,skills=?,experience=?,profile_completed=1 WHERE id=?').run(title,team,skills.join(', '),experience,id);
       const searchIndex=await retrieval.indexPerson(id).catch(error=>({indexed:0,mode:'exact',error:error.message}));
       return json(res,200,{ok:true,person:one('SELECT * FROM users WHERE id=?',id),searchIndex});
     }
@@ -240,6 +238,7 @@ async function route(req, res) {
     if (req.method === 'POST' && url.pathname === '/api/calendar/invites') {
       try {
         const b=await body(req), runId=Number(b.runId), ids=[...new Set((b.proposalIds||[]).map(Number))].slice(0,10);
+        if(one('SELECT user_id FROM runs WHERE id=?',runId)?.user_id!==currentUser()?.id) return json(res,403,{error:'Breaks can only be added from your own run.'});
         if(!ids.length) return json(res,400,{error:'Select at least one proposed break.'});
         const attendees=[...new Set((b.attendees||[]).map(x=>String(x).trim().toLowerCase()).filter(Boolean))];
         if(attendees.length>10||attendees.some(e=>!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) return json(res,400,{error:'Enter up to 10 valid attendee email addresses.'});
@@ -284,6 +283,7 @@ async function route(req, res) {
     }
     if (req.method === 'POST' && url.pathname.startsWith('/api/runs/') && url.pathname.endsWith('/feedback')) {
       const id=Number(url.pathname.split('/')[3]); const b=await body(req); const run=one('SELECT * FROM runs WHERE id=?',id); if(!run)return json(res,404,{error:'Run not found.'});
+      if(Number(run.user_id)!==currentUser()?.id)return json(res,403,{error:'Only the person who ran this solution can rate it.'});
       if(!['helped','somewhat','no'].includes(b.feedback))return json(res,400,{error:'Choose a valid feedback option.'});
       if(run.feedback)return json(res,409,{error:'Feedback was already recorded for this run.'});
       db.prepare('UPDATE runs SET feedback=? WHERE id=?').run(String(b.feedback),id);
@@ -319,5 +319,5 @@ if (process.env.PYTHIA_INIT_ONLY === '1') {
   } catch(error) {
     console.error(`Embedding backfill failed; exact local search remains available: ${error.message}`);
   }
-  createServer((req,res)=>route(req,res).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));
+  createServer((req,res)=>auth.handle(req,res,()=>route(req,res)).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));
 }

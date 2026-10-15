@@ -22,7 +22,7 @@ async function applicationIsRunning() {
     const response = await fetch(`http://127.0.0.1:${port}/api/oracle/status`, {
       signal: AbortSignal.timeout(750)
     });
-    return response.ok;
+    return response.ok || response.status === 401; // 401: the running app answers, but sign-in is required
   } catch {
     return false;
   }

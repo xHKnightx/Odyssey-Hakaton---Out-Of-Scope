@@ -27,3 +27,20 @@ Project documentation is collected in the [Documentation index](./Documentation/
 ## Oracle LLM
 
 Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See the [Oracle LLM setup guide](./Documentation/Setup/ORACLE-LLM-SETUP.md).
+
+## Signing in
+
+Every page and API call needs a session. The login page offers two ways in:
+
+- **Sign in with Google** — company accounts only (`AUTH_ALLOWED_DOMAINS`, default `t1a.com`). It requests identity only (`openid email profile`); Calendar and Gmail are connected separately under Connections, and only for the account you signed in with. The first sign-in creates your profile and asks for your role and skills.
+- **Demo persona** (development login) — pick any seeded colleague. It is on while the Google credentials in `.env` are empty or when `AUTH_DEV_LOGIN=1`, and it is always off when `NODE_ENV=production`.
+
+The identity of the person making a request always comes from the session, never from the request body. Setup steps are in the [Google setup guide](./Documentation/Setup/GOOGLE-SETUP.md); the session model and API gating are described in the [current architecture](./Documentation/Architecture/ARCHITECTURE.md#authentication-and-sessions).
+
+## Tests
+
+```sh
+npm test
+```
+
+Node's built-in runner, no dependencies. The HTTP tests start the real server from a temporary copy of the sources, so the `data/` folder is never touched.

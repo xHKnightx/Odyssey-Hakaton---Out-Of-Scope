@@ -8,13 +8,15 @@ PYTHIA is currently a local Node.js application built without third-party runtim
 
 ```mermaid
 flowchart LR
-  UI["Browser UI<br/>Oracle · Expertise · Discoveries · Pantheon"] --> API["Node.js HTTP server<br/>server.mjs"]
+  UI["Browser UI<br/>Oracle · Expertise · Discoveries · Pantheon"] --> AUTH["Sign-in gate and sessions<br/>lib/auth"]
+  AUTH --> API["Node.js HTTP server<br/>server.mjs"]
   API --> DB[("SQLite<br/>people · solutions · runs · rewards")]
   API --> RET["Hybrid retrieval<br/>FTS5 + cosine similarity"]
   RET --> IDX[("Local search indexes<br/>FTS5 + embedding BLOBs")]
   RET --> EMB["SecondStack embeddings<br/>text-embedding-3-small"]
   API --> CHAT["SecondStack chat completions<br/>gpt-5.4-mini"]
   API --> GOOGLE["Optional Google APIs<br/>Calendar · Gmail"]
+  AUTH --> OIDC["Google sign-in<br/>OpenID Connect"]
 ```
 
 The default server binds to `127.0.0.1:3000`. Secrets are read from `.env.local`, which overrides `.env` and is excluded from Git.
@@ -24,6 +26,33 @@ The default server binds to `127.0.0.1:3000`. Secrets are read from `.env.local`
 The local database is created at `data/pythia.db`. Shared demo records come from the versioned `seed/mockup-seed.json`; the applied version is stored in `app_meta`. Seed updates use idempotent upserts so a normal application restart can update shared demo records without clearing locally created activity.
 
 For a deterministic clean start, stop the application and run `npm run db:reset`. The reset command archives the current SQLite files under `data/backups/`, creates a new database, applies the current schema and seed, and exits without starting the HTTP server or requesting embeddings. Search indexes are rebuilt on the next normal application start.
+
+## Authentication and sessions
+
+Every page and API call except the login page requires a session. The code lives in `lib/auth/` and wraps the request handler in `server.mjs`, so route handlers never see an unauthenticated request.
+
+**Sign-in methods.**
+
+- *Google* (`GET /auth/login` → Google → `GET /auth/google/callback`): OpenID Connect authorization-code flow with PKCE (S256), a `state` value bound to a short-lived `pythia_oauth` cookie (blocks login CSRF), and a `nonce`. Only identity scopes are requested (`openid email profile`). The ID token is accepted only when `iss`, `aud`, `exp` and `nonce` match, `email_verified` is true, the email domain is in `AUTH_ALLOWED_DOMAINS` (default `t1a.com`) and the `hd` claim names the same domain. The token comes straight from Google's token endpoint over TLS, so its signature is not verified a second time.
+- *Demo persona* (`POST /auth/dev-login`, development login): pick a seeded colleague. It is on when `AUTH_DEV_LOGIN=1`, or when the variable is empty and no Google credentials are configured; it is always off when `NODE_ENV=production`. The startup log states which methods are active.
+
+The Google calendar/mail connection (`/auth/google`, same redirect URI) is a separate flow that runs only for a signed-in user. The callback tells the two flows apart by looking up `state` in the sign-in flow's pending map and falls through to the connection flow otherwise.
+
+**Sessions.** A successful sign-in creates a random opaque token, sent as the `pythia_session` cookie (`HttpOnly`, `SameSite=Lax`, `Secure` when the redirect URI is https). Only its SHA-256 hash is stored in the `sessions` table (`id_hash`, `user_id`, `method`, `created_at`, `expires_at`). Sessions last `SESSION_TTL_HOURS` (default 12), expired rows are purged when a new session starts, and `POST /auth/logout` deletes the row. Signing in again destroys the previous session of that browser.
+
+**Request identity.** The gate resolves the cookie to a user and runs the rest of the request inside an `AsyncLocalStorage` scope (`lib/auth/context.mjs`). `resolveUserId()` in `server.mjs` returns that user and ignores any `userId` in the body or query string, so a client cannot act as someone else. Ownership rules that depend on it:
+
+- a run can be rated, and break invitations added to it, only by the person who ran it (`403` otherwise);
+- `POST /api/people` creates or completes the *caller's own* profile (`409` if another profile already has the name);
+- `PATCH /api/people/:id` accepts only the caller's own id (`403` otherwise).
+
+**Gate behaviour.** Without a session, `/api/*` answers `401` (`{"code":"auth_required"}`); `GET /login.html`, `/login.js`, `/style.css` and `/favicon.ico` stay public; other page and `/auth/*` GETs redirect to `/login.html`. State-changing requests carrying `Sec-Fetch-Site: cross-site`, or an `Origin` that differs from `Host`, get `403`.
+
+**Users.** `ensureAuthSchema` adds `email`, `google_sub`, `avatar_url`, `last_login_at` and `profile_completed` to `users` (unique indexes on `lower(email)` and `google_sub`) and creates `sessions`; existing databases keep all their records, and existing profiles stay complete. A Google sign-in is linked to a profile in this order: `google_sub`, then email, then an unclaimed seed profile with the same normalized name, otherwise a new profile is created with placeholder role/team/skills and `profile_completed=0`. The UI then opens a "Welcome" dialog until the person saves their role and skills.
+
+**Google Calendar and Gmail tokens** are stored per user in `data/google-tokens/<user id>.json` (mode `0600`, never committed). A token is released only to the account it was issued for: if the signed-in profile has an email that differs from the token's, the token is ignored, which also protects against ids being reassigned after `npm run db:reset`. Connecting a Google account other than the one signed in is refused and the grant is revoked. A pre-auth `data/google-token.json` is adopted by the user whose email matches.
+
+**Verification status.** Covered by `npm test` with a fake Google endpoint: token validation (domain, `hd`, nonce, unverified email), PKCE and state handling, session lifecycle, the gate, ownership checks and per-user token files. Verified live: Google sign-in with a real `t1a.com` account (persona login off). Not verified live yet: connecting Calendar/Gmail after sign-in, and the first-sign-in profile creation for a brand-new account.
 
 ## Oracle request flow
 
@@ -103,6 +132,8 @@ At startup, all FTS5 rows are refreshed. Embeddings are requested only when the 
 
 Names remain in local SQLite and are never included in employee embedding text or in the LLM candidate prompt. The LLM receives a candidate ID, role, team, skills, experience, and retrieval scores. After it returns validated `peopleIds`, the server resolves those IDs to names locally for display.
 
+Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
+
 The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. Profile role, team, skills, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
@@ -111,6 +142,7 @@ The user's Seek message is sent to SecondStack twice: once for its query embeddi
 - If the chat model fails, Oracle uses its deterministic local recommendation fallback over the retrieved candidates.
 - If both external services are unavailable, the application remains usable with local exact search.
 - Google Calendar and Gmail are optional; Calendar Breather uses seeded demo data when Google is not connected.
+- If Google sign-in is not configured, the demo persona login keeps the application usable; once Google credentials are set, persona login is off unless `AUTH_DEV_LOGIN=1`.
 
 ## Configuration
 
@@ -121,7 +153,13 @@ LLM_MODEL=gpt-5.4-mini
 LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
 EMBEDDING_MODEL=text-embedding-3-small
+
+AUTH_ALLOWED_DOMAINS=t1a.com
+AUTH_DEV_LOGIN=
+SESSION_TTL_HOURS=12
 ```
+
+`AUTH_DEV_LOGIN`: `1` on, `0` off, empty means on only while Google credentials are empty. `AUTH_COOKIE_SECURE=1` forces the `Secure` cookie flag (automatic when `GOOGLE_REDIRECT_URI` is https). The Google OAuth variables are described in the Google setup guide.
 
 See the [Oracle LLM setup guide](../Setup/ORACLE-LLM-SETUP.md) and [Google setup guide](../Setup/GOOGLE-SETUP.md) for setup details.
 
@@ -130,5 +168,6 @@ See the [Oracle LLM setup guide](../Setup/ORACLE-LLM-SETUP.md) and [Google setup
 - Published SecondStack agents are not imported automatically. Calendar Breather and the other catalogue records are local seeded solutions.
 - There is no generic remote-agent invocation protocol yet. Finding an agent and running it are separate integrations.
 - Search compares vectors in application memory. This is appropriate for the current small dataset; a larger deployment should move vector search to `sqlite-vec` or Postgres with pgvector.
+- Authentication identifies people but there are no roles: every signed-in colleague can read all profiles and the catalogue. Sign-in has no rate limiting, and sessions live in the local SQLite file of a single process.
 - Profiles have no field-level access-control model yet. Permission filtering must be applied before retrieval in a multi-tenant deployment.
 - The MCP endpoint and SecondStack/ControlTower catalogue synchronization described in the target architecture are still planned work.
