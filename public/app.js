@@ -1,5 +1,6 @@
 const $ = s => document.querySelector(s);
-let data=null, googleState=null, currentRun=null, activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
+let data=null, googleState=null, oracleState=null, currentRun=null, activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
+let oracleMessages=[];
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path, options={}) {
   const response=await fetch(path,{...options,headers:{'content-type':'application/json',...(options.headers||{})}});
@@ -81,6 +82,38 @@ async function loadGoogleStatus(){
   }catch(error){status.textContent=error.message;}
 }
 
+async function loadOracleStatus(){
+  try{
+    oracleState=await api('/api/oracle/status');
+    const hint=$('#seek-form .hint');
+    if(hint)hint.textContent=oracleState.configured?'Oracle connected · Powered by SecondStack':'Oracle is using local search';
+  }catch(error){oracleState={configured:false};}
+}
+
+function oracleRecommendation(result){
+  const rec=result.recommendation||{};
+  if(rec.type==='solution'&&result.solution){
+    const solution=result.solution;
+    return `<article class="oracle-rec"><div class="kind">${esc(solution.kind)}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p><small>${esc(rec.reason||'')} · ${Math.round(rec.confidence||0)}% confidence</small><div class="answer-actions">${solution.runnable?`<button class="button gold" data-run="${solution.id}" data-request="${result.requestId}">Run this solution →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div></article>`;
+  }
+  if(rec.type==='person'&&result.people?.length){
+    return `<article class="oracle-rec"><div class="kind">RECOMMENDED COLLEAGUES</div><div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person)}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span></button>`).join('')}</div><small>${esc(rec.reason||'')}</small></article>`;
+  }
+  if(rec.type==='build'){
+    const steps=(rec.instructions||[]).map(step=>`<li>${esc(step)}</li>`).join('');
+    return `<article class="oracle-rec build-rec"><div class="kind">BUILD A NEW ${/agent/i.test(rec.title||'')?'AGENT':'SKILL'}</div><h3>${esc(rec.title||'New PYTHIA skill')}</h3>${steps?`<ol>${steps}</ol>`:''}<small>${esc(rec.reason||'No strong catalogue match was found.')}</small><div class="answer-actions"><button class="button" data-action="share">Save as an offering</button></div></article>`;
+  }
+  return '';
+}
+
+function renderOracleConversation(waiting=false){
+  const thread=$('#answer');
+  thread.hidden=false;
+  thread.classList.add('oracle-thread');
+  thread.innerHTML=oracleMessages.map(message=>`<div class="oracle-message ${message.role}"><div class="oracle-role">${message.role==='user'?'YOU':'PYTHIA'}</div><div class="oracle-copy">${esc(message.content).replace(/\n/g,'<br>')}</div>${message.result?oracleRecommendation(message.result):''}</div>`).join('')+(waiting?'<div class="oracle-message assistant thinking"><div class="oracle-role">PYTHIA</div><div class="oracle-copy">Consulting the catalogue and expertise directory…</div></div>':'');
+  thread.scrollIntoView({behavior:'smooth',block:'end'});
+}
+
 function personDetail(id){
   const p=data.people.find(x=>x.id===Number(id));if(!p)return;
   const experience=p.experience?`<div class="detail-section"><div class="eyebrow">PROJECT / EXPERIENCE</div><p class="profile-experience">${esc(p.experience)}</p></div>`:'<div class="detail-section"><div class="eyebrow">PROJECT / EXPERIENCE</div><p class="profile-experience muted">No experience example has been added to this profile yet.</p></div>';
@@ -144,8 +177,16 @@ document.addEventListener('click',async event=>{
 
 $('#people-search').addEventListener('input',renderDirectory);
 $('#seek-form').addEventListener('submit',async event=>{
-  event.preventDefault();const button=event.currentTarget.querySelector('button'),text=$('#question').value;button.disabled=true;button.textContent='Consulting…';
-  try{const result=await api('/api/seek',{method:'POST',body:JSON.stringify({text,userId:activeUserId})}),s=result.solution;$('#answer').hidden=false;$('#answer').innerHTML=`<div class="eyebrow">THE ORACLE HAS FOUND A PATH</div><span class="match">${result.match}% RELEVANCE · ${result.recommendation.toUpperCase()}${result.award?.points?` · +${result.award.points} LAURELS`:''}</span><h2>${esc(s.title)}</h2><p>${esc(s.summary)}</p><p class="people-hint">Created by ${esc(s.owner)}. The catalogue contains matching colleagues and related know-how.</p><div class="answer-actions">${s.runnable?`<button class="button gold" data-run="${s.id}" data-request="${result.requestId}">Run it on my week →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div>`;$('#answer').scrollIntoView({behavior:'smooth',block:'center'});await load()}catch(error){toast(error.message)}finally{button.disabled=false;button.innerHTML='Ask the Oracle <span>→</span>'}
+  event.preventDefault();const button=event.currentTarget.querySelector('button'),input=$('#question'),text=input.value.trim();if(!text)return;
+  oracleMessages.push({role:'user',content:text});input.value='';button.disabled=true;button.textContent='Consulting…';renderOracleConversation(true);
+  try{
+    const result=await api('/api/oracle/chat',{method:'POST',body:JSON.stringify({messages:oracleMessages.map(({role,content})=>({role,content})),userId:activeUserId})});
+    oracleMessages.push({role:'assistant',content:result.answer,result});renderOracleConversation();await load();
+    if(result.fallbackReason)toast(`LLM unavailable · using local matching: ${result.fallbackReason}`);
+    else if(result.mode==='local')toast('Oracle is using local matching. Add LLM settings in .env for live chat.');
+    input.placeholder='Ask a follow-up question…';
+  }catch(error){oracleMessages.push({role:'assistant',content:`I could not complete that request: ${error.message}`});renderOracleConversation();toast(error.message)}
+  finally{button.disabled=false;button.innerHTML='Send <span>→</span>';input.focus({preventScroll:true})}
 });
 $('#share-form').addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const result=await api('/api/share',{method:'POST',body:JSON.stringify({title:form.get('title'),body:form.get('body'),userId:activeUserId})});$('#share-dialog').close();event.currentTarget.reset();await load();toast(result.award.points?`Your offering was saved · +${result.award.points} laurels`:`Your offering was saved · ${result.award.reason==='weekly_cap'?'weekly reward cap reached':'duplicate offering earned no laurels'}`)}catch(error){toast(error.message)}});
 $('#share-dialog .close').addEventListener('click',()=>$('#share-dialog').close());
@@ -161,4 +202,4 @@ $('#create-profile-form').addEventListener('submit',async event=>{
   }catch(error){toast(error.message)}finally{button.disabled=false;button.textContent='Save profile'}
 });
 
-load().then(()=>{loadGoogleStatus();connectStatusFromQuery()}).catch(error=>toast(error.message));
+load().then(()=>{loadGoogleStatus();loadOracleStatus();connectStatusFromQuery()}).catch(error=>toast(error.message));

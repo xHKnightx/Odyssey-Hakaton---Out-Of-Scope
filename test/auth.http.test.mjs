@@ -89,6 +89,33 @@ describe('authentication gate (dev login enabled)', () => {
     assert.equal((await client.request('/api/people', { method: 'POST', json: { name: 'Daniel Ortiz' } })).status, 400);
   });
 
+  it('lets people patch only their own profile', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const { people } = (await client.request('/api/overview')).json();
+    const other = people.find(person => person.id !== persona.id);
+    const denied = await client.request(`/api/people/${other.id}`, { method: 'PATCH', json: { title: 'Hijacked' } });
+    assert.equal(denied.status, 403);
+    assert.notEqual((await client.request('/api/overview')).json().people.find(person => person.id === other.id).title, 'Hijacked');
+    const own = await client.request(`/api/people/${persona.id}`, { method: 'PATCH', json: { title: 'Principal Designer' } });
+    assert.equal(own.status, 200);
+    assert.equal(own.json().person.title, 'Principal Designer');
+  });
+
+  it('puts the Oracle behind sign-in and answers as the signed-in person', async () => {
+    const anonymous = app.client();
+    assert.equal((await anonymous.request('/api/oracle/status')).status, 401);
+    assert.equal((await anonymous.request('/api/oracle/chat', { method: 'POST', json: { messages: [{ role: 'user', content: 'calendar' }] } })).status, 401);
+
+    const { client, persona } = await signInAs(app, 'Priya Nair');
+    assert.equal((await client.request('/api/oracle/status')).status, 200);
+    const { people } = (await client.request('/api/overview')).json();
+    const other = people.find(person => person.id !== persona.id);
+    const chat = await client.request('/api/oracle/chat', { method: 'POST', json: { userId: other.id, messages: [{ role: 'user', content: 'my calendar is full of meetings' }] } });
+    assert.equal(chat.status, 200);
+    const asked = (await client.request('/api/overview')).json().requests.find(request => request.id === chat.json().requestId);
+    assert.equal(asked.user_id, persona.id);
+  });
+
   it('ends the session on logout', async () => {
     const { client } = await signInAs(app, 'Mia Novak');
     assert.equal((await client.request('/api/auth/me')).status, 200);

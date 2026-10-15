@@ -29,6 +29,10 @@ export async function startApp(env = {}) {
       AUTH_ALLOWED_DOMAINS: 't1a.com',
       GOOGLE_CLIENT_ID: '',
       GOOGLE_CLIENT_SECRET: '',
+      LLM_BASE_URL: '',
+      LLM_API_KEY: '',
+      LLM_MODEL: '',
+      EMBEDDING_MODEL: '',
       ...env
     },
     stdio: ['ignore', 'pipe', 'pipe']

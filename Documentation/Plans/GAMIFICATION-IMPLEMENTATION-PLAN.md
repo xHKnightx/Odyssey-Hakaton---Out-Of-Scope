@@ -1,6 +1,6 @@
 # Gamification rules: gap audit and implementation log
 
-This work implements the earning rules in `PYTHIA-gamification-framework.md` on the local SQLite data and makes it possible to try actions as different demo profiles.
+This work implements the earning rules in the [gamification framework](../Architecture/PYTHIA-gamification-framework.md) on the local SQLite data and makes it possible to try actions as different demo profiles.
 
 ## Starting point
 

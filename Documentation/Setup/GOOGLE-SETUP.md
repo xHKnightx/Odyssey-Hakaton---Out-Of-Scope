@@ -4,9 +4,9 @@ Calendar Breather uses Google OAuth directly from this local app. It requests th
 
 - `calendar.events`: read calendar events and create reviewed recovery blocks.
 - `gmail.readonly`: search recent mail for participants of upcoming meetings and read message metadata/snippets for a local sentiment estimate.
-- `openid email profile`: show which Google account is connected.
+- `openid email profile`: sign in to PYTHIA and show which Google account is connected.
 
-Email bodies are not fetched or stored. The app keeps the OAuth token in `data/google-token.json` with owner-only file permissions. The database stores only proposal times and Google event IDs, not email snippets or calendar descriptions. The entire `data/` folder and `.env` are excluded from Git.
+Email bodies are not fetched or stored. The app keeps each person's OAuth token in `data/google-tokens/<profile id>.json` with owner-only file permissions. The database stores only proposal times and Google event IDs, not email snippets or calendar descriptions. The entire `data/` folder and `.env` are excluded from Git.
 
 ## Google Cloud setup
 
@@ -16,7 +16,7 @@ Email bodies are not fetched or stored. The app keeps the OAuth token in `data/g
 4. Create an OAuth client with application type **Web application**.
 5. Add this exact authorized redirect URI: `http://localhost:3000/auth/google/callback`.
 6. Copy `.env.example` to `.env` in the project root. Put the OAuth client ID and secret in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Do not commit or share `.env`.
-7. Restart the local app and open **Connections → Connect Google**. Review the consent screen and sign into the account whose calendar you want to analyze.
+7. Restart the local app and open **Connections → Connect Google**. Review the consent screen and choose the Google account you signed in to PYTHIA with; another account is refused.
 
 If Google reports `access_denied`, the account may not be listed as an OAuth test user, the Workspace administrator may block the scopes, or an API is not enabled.
 

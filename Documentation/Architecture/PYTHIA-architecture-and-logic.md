@@ -1,5 +1,7 @@
 # PYTHIA: architecture and application logic (v2)
 
+> This is the broader target design and contains planned components that are not implemented in the local MVP. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the current, verified architecture of the `anastasia/local` branch.
+
 Oct 15, 2026 · builds on the Oct 14 draft by @Anastasia
 
 ## What changed since the Oct 14 draft

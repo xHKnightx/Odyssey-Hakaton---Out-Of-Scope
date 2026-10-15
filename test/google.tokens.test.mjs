@@ -58,6 +58,13 @@ describe('per-user Google connection', () => {
     assert.equal(existsSync(join(workdir, 'data', 'google-tokens', '9.json')), true);
   });
 
+  it('does not hand a token to a profile whose email differs from the account it was issued for', async () => {
+    stubGoogle('demo@t1a.com');
+    await runWithUser({ id: 11 }, () => google.exchangeGoogleCode('code'));
+    assert.equal((await runWithUser({ id: 11, email: 'demo@t1a.com' }, () => google.readGoogleToken())).email, 'demo@t1a.com');
+    assert.equal(await runWithUser({ id: 11, email: 'someone.else@t1a.com' }, () => google.readGoogleToken()), null);
+  });
+
   it('does not overwrite a token the user already has when adopting the legacy file', async () => {
     const { writeFileSync } = await import('node:fs');
     writeFileSync(join(workdir, 'data', 'google-token.json'), JSON.stringify({ email: 'mia@t1a.com', refresh_token: 'legacy' }));

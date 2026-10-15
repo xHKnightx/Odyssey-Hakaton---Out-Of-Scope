@@ -11,16 +11,20 @@ import { createGamification } from './lib/gamification.mjs';
 import { createAuth } from './lib/auth/index.mjs';
 import { currentUser } from './lib/auth/context.mjs';
 import { saveOwnProfile } from './lib/auth/profile.mjs';
+import { consultOracle, oracleStatus } from './lib/oracle.mjs';
+import { createRetrieval } from './lib/retrieval.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
-try {
-  const envText = await readFile(join(root, '.env'), 'utf8');
-  for (const line of envText.split(/\r?\n/)) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
-  }
-} catch (error) { if (error.code !== 'ENOENT') throw error; }
+for (const envFile of ['.env', '.env.local']) {
+  try {
+    const envText = await readFile(join(root, envFile), 'utf8');
+    for (const line of envText.split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
+    }
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
 await mkdir(join(root, 'data'), { recursive: true });
 const db = new DatabaseSync(join(root, 'data', 'pythia.db'));
 const all = (sql, ...args) => db.prepare(sql).all(...args);
@@ -100,6 +104,7 @@ if (!one('SELECT value FROM app_meta WHERE key=?','gamification_history_v1')) {
   } catch(error) { db.exec('ROLLBACK'); throw error; }
 }
 const gamification=createGamification(db);
+const retrieval=createRetrieval(db);
 if (!one('SELECT value FROM app_meta WHERE key=?','gamification_bootstrap_dedupe_v1')) {
   db.prepare("DELETE FROM wisdom_events WHERE (kind='shared' AND note IN ('Shared Calendar Breather','Shared Finance Data Quality Checklist')) OR (kind='solution_run' AND note='Calendar Breather used by a colleague') OR (kind='helped' AND note='Helped a colleague validate a report')").run();
   db.prepare('INSERT INTO app_meta(key,value) VALUES(?,?)').run('gamification_bootstrap_dedupe_v1','done');
@@ -142,6 +147,26 @@ async function route(req, res) {
     catch (error) { console.error('Google OAuth callback failed:', error.message); return redirect(res, `/?google_error=${encodeURIComponent(error.message)}#connections`); }
   }
   if (url.pathname.startsWith('/api/')) {
+    if (req.method === 'GET' && url.pathname === '/api/oracle/status') {
+      return json(res, 200, {...oracleStatus(),retrieval:{mode:retrieval.configured()?'hybrid':'exact',embeddingModel:retrieval.model()}});
+    }
+    if (req.method === 'POST' && url.pathname === '/api/oracle/chat') {
+      const b=await body(req),userId=resolveUserId(b.userId);
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      const messages=(Array.isArray(b.messages)?b.messages:[]).slice(-12);
+      const text=String([...messages].reverse().find(message=>message?.role==='user')?.content||'').trim();
+      if(!text)return json(res,400,{error:'Enter a question first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep each Oracle message under 4,000 characters.'});
+      const user=one('SELECT id,name,title,team,skills FROM users WHERE id=?',userId);
+      const candidates=await retrieval.search(text,{peopleLimit:5,solutionLimit:5,excludeUserId:userId});
+      const solutions=candidates.solutions,people=candidates.people;
+      const inserted=db.prepare('INSERT INTO requests(text,user_id) VALUES(?,?)').run(text,userId);
+      const requestId=Number(inserted.lastInsertRowid),award=gamification.rewardSeek(userId,requestId);
+      const result=await consultOracle({messages,solutions,people,user});
+      const solution=result.recommendation.solutionId?solutions.find(item=>item.id===result.recommendation.solutionId)||null:null;
+      const recommendedPeople=(result.recommendation.peopleIds||[]).map(id=>people.find(item=>item.id===id)).filter(Boolean);
+      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
+    }
     if (req.method === 'GET' && url.pathname === '/api/google/status') {
       const token = await readGoogleToken();
       return json(res, 200, { configured:googleConfigured(), connected:Boolean(token), email:token?.email||'', name:token?.name||'', redirectUri:googleRedirectUri(), scopes:GOOGLE_SCOPES, grantedScopes:token?.scope||'' });
@@ -166,7 +191,22 @@ async function route(req, res) {
       return json(res, 200, { activeUserId,people,pantheon,gratitude,myStanding,mySkills:active?.skills?.split(',').map(s=>s.trim())||[],solutions:all('SELECT s.*,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id ORDER BY s.id'),requests:all('SELECT r.*,u.name asker FROM requests r JOIN users u ON u.id=r.user_id ORDER BY r.id DESC'),events:all('SELECT w.*,u.name FROM wisdom_events w JOIN users u ON u.id=w.user_id ORDER BY w.id DESC LIMIT 10'),runs:all('SELECT r.*,s.title solution,u.name FROM runs r JOIN solutions s ON s.id=r.solution_id JOIN users u ON u.id=s.owner_id ORDER BY r.id DESC LIMIT 6') });
     }
     if (req.method === 'POST' && url.pathname === '/api/people') {
-      const saved=saveOwnProfile(db,currentUser(),await body(req)); return json(res,saved.status,saved.error?{error:saved.error}:{ok:true,person:saved.person});
+      const saved=saveOwnProfile(db,currentUser(),await body(req));
+      if(saved.error) return json(res,saved.status,{error:saved.error});
+      const searchIndex=await retrieval.indexPerson(saved.person.id).catch(error=>({indexed:0,mode:'exact',error:error.message}));
+      return json(res,saved.status,{ok:true,person:saved.person,searchIndex});
+    }
+    if(req.method==='PATCH'&&url.pathname.startsWith('/api/people/')){
+      const id=Number(url.pathname.split('/')[3]),existing=one('SELECT * FROM users WHERE id=?',id);
+      if(!existing)return json(res,404,{error:'Colleague profile not found.'});
+      if(id!==currentUser()?.id)return json(res,403,{error:'You can only edit your own profile.'});
+      const b=await body(req),title=String(b.title??existing.title??'').trim(),team=String(b.team??existing.team??'').trim(),experience=String(b.experience??existing.experience??'').trim();
+      const skills=b.skills==null?String(existing.skills||'').split(',').map(s=>s.trim()).filter(Boolean):[...new Set((Array.isArray(b.skills)?b.skills:String(b.skills).split(/[\n,]/)).map(s=>String(s).trim()).filter(Boolean))];
+      if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one skill are required.'});
+      if(title.length>120||team.length>80||experience.length>1200||skills.length>20||skills.some(skill=>skill.length>60))return json(res,400,{error:'One or more profile fields exceed the allowed length.'});
+      db.prepare('UPDATE users SET title=?,team=?,skills=?,experience=?,profile_completed=1 WHERE id=?').run(title,team,skills.join(', '),experience,id);
+      const searchIndex=await retrieval.indexPerson(id).catch(error=>({indexed:0,mode:'exact',error:error.message}));
+      return json(res,200,{ok:true,person:one('SELECT * FROM users WHERE id=?',id),searchIndex});
     }
     if(req.method==='POST'&&url.pathname==='/api/skills/confirm'){
       const b=await body(req),userId=resolveUserId(b.userId),skill=String(b.skill||'').trim();
@@ -177,7 +217,8 @@ async function route(req, res) {
       db.exec('BEGIN IMMEDIATE');let award;
       try{db.prepare('UPDATE users SET skills=? WHERE id=?').run([...skills,skill].join(', '),userId);award=gamification.rewardSkillConfirmation(userId,skill);db.exec('COMMIT')}
       catch(error){db.exec('ROLLBACK');throw error}
-      return json(res,200,{ok:true,award,skills:[...skills,skill]});
+      const searchIndex=await retrieval.indexPerson(userId).catch(error=>({indexed:0,mode:'exact',error:error.message}));
+      return json(res,200,{ok:true,award,skills:[...skills,skill],searchIndex});
     }
     if(req.method==='POST'&&url.pathname==='/api/thanks'){
       const b=await body(req),actorId=resolveUserId(b.userId),targetId=Number(b.targetId);
@@ -268,4 +309,15 @@ async function route(req, res) {
   catch { json(res,404,{error:'Not found'}); }
 }
 
-createServer((req,res)=>auth.handle(req,res,()=>route(req,res)).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));
+if (process.env.PYTHIA_INIT_ONLY === '1') {
+  db.close();
+  console.log('PYTHIA database initialized from the current seed.');
+} else {
+  try {
+    const indexed=await retrieval.reindexAll();
+    console.log(`Search index ready: ${indexed.people.indexed} people and ${indexed.solutions.indexed} solutions embedded; mode=${indexed.people.mode}.`);
+  } catch(error) {
+    console.error(`Embedding backfill failed; exact local search remains available: ${error.message}`);
+  }
+  createServer((req,res)=>auth.handle(req,res,()=>route(req,res)).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});})).listen(port,'127.0.0.1',()=>console.log(`PYTHIA running at http://localhost:${port}`));
+}
