@@ -80,11 +80,16 @@ describe('authentication gate (dev login enabled)', () => {
 
   it('edits only the signed-in profile', async () => {
     const { client, persona } = await signInAs(app, 'Daniel Ortiz');
-    const profile = { name: 'Daniel Ortiz', title: 'Lead Analyst', team: 'Finance', skills: 'SQL, Power BI', location: 'Prague' };
+    const profile = { name: 'Daniel Ortiz', title: 'Lead Analyst', team: 'Finance', skills: 'SQL, sql,  SQL  , Power   BI', location: 'Prague' };
     const saved = await client.request('/api/people', { method: 'POST', json: profile });
     assert.equal(saved.status, 200);
     assert.equal(saved.json().person.id, persona.id);
     assert.equal(saved.json().person.title, 'Lead Analyst');
+    assert.equal(saved.json().person.skills, 'SQL, Power BI');
+    const duplicate = await client.request('/api/skills/confirm', { method: 'POST', json: { skill: '  sql  ' } });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.json().award.reason, 'already_on_profile');
+    assert.deepEqual(duplicate.json().skills, ['SQL','Power BI']);
     assert.equal((await client.request('/api/people', { method: 'POST', json: { ...profile, name: 'Mia Novak' } })).status, 409);
     assert.equal((await client.request('/api/people', { method: 'POST', json: { name: 'Daniel Ortiz' } })).status, 400);
   });
@@ -96,9 +101,10 @@ describe('authentication gate (dev login enabled)', () => {
     const denied = await client.request(`/api/people/${other.id}`, { method: 'PATCH', json: { title: 'Hijacked' } });
     assert.equal(denied.status, 403);
     assert.notEqual((await client.request('/api/overview')).json().people.find(person => person.id === other.id).title, 'Hijacked');
-    const own = await client.request(`/api/people/${persona.id}`, { method: 'PATCH', json: { title: 'Principal Designer' } });
+    const own = await client.request(`/api/people/${persona.id}`, { method: 'PATCH', json: { title: 'Principal Designer', skills: ['Figma',' figma ','Service   design'] } });
     assert.equal(own.status, 200);
     assert.equal(own.json().person.title, 'Principal Designer');
+    assert.equal(own.json().person.skills, 'Figma, Service design');
   });
 
   it('drafts first-login profile fields without saving or publishing solutions', async () => {
@@ -143,6 +149,12 @@ describe('authentication gate (dev login enabled)', () => {
     }});
     assert.equal(saved.status,200);
     assert.deepEqual(saved.json().saved,{skills:1,experience:0,solutions:1});
+    const duplicate=await client.request('/api/share',{method:'POST',json:{
+      text:'I have experience with Salesforce data quality.',
+      analysis:{headline:'Existing expertise',summary:'Review it',skills:[' salesforce   DATA quality '],experience:[],solutions:[]}
+    }});
+    assert.equal(duplicate.status,200);
+    assert.equal(duplicate.json().saved.skills,0);
     const overview=(await client.request('/api/overview')).json();
     assert.match(overview.people.find(person=>person.id===persona.id).skills,/Salesforce data quality/);
     assert.equal(overview.solutions.find(solution=>solution.title==='HTTP Test Duplicate Finder').owner,'Mia Novak');

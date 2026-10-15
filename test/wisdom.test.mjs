@@ -4,7 +4,7 @@ import { analyzeProfile, analyzeWisdom, hasShareableArtifact, validateProfileAna
 
 test('wisdom analysis keeps bounded areas of expertise, experience, and reusable assets',()=>{
   const result=validateWisdomAnalysis({
-    headline:'Useful work',summary:'Review it',expertiseAreas:['Salesforce','Salesforce','Data quality'],
+    headline:'Useful work',summary:'Review it',expertiseAreas:['Salesforce',' salesforce ','Data   quality',' data quality '],
     experience:[{title:'Led a migration',details:'40,000 accounts'}],
     solutions:[{title:'Duplicate Account Cleaner',kind:'agent',summary:'Finds likely duplicate accounts.',runnable:true,minutesSaved:45}]
   });
@@ -43,7 +43,7 @@ test('a human capability never becomes a reusable asset without an explicit arti
 test('profile analysis returns editable profile fields without catalogue solutions',async()=>{
   const previous={base:process.env.LLM_BASE_URL,model:process.env.LLM_MODEL};
   delete process.env.LLM_BASE_URL;delete process.env.LLM_MODEL;
-  const validated=validateProfileAnalysis({title:'CRM Architect',team:'CRM',expertiseAreas:['Salesforce','Salesforce'],experience:'Led CRM migrations.'});
+  const validated=validateProfileAnalysis({title:'CRM Architect',team:'CRM',expertiseAreas:['Salesforce',' salesforce ','Salesforce   '],experience:'Led CRM migrations.'});
   assert.deepEqual(validated.skills,['Salesforce']);
   const result=await analyzeProfile('I lead Salesforce CRM migrations and improve data quality.');
   assert.equal(result.mode,'local');

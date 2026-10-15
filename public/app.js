@@ -20,28 +20,20 @@ function iconLaurel(){let leaves='';for(let i=0;i<9;i++){const d=255-i*15,a=d*Ma
 function renderSolutions(){
   $('#solutions').innerHTML=data.solutions.map(s=>`<article class="card"><div class="kind">${esc(solutionKindLabel(s.kind))}${s.runnable?' · RUNNABLE':''}</div><h3>${esc(s.title)}</h3><p>${esc(s.summary)}</p><div class="card-foot"><span>By ${esc(s.owner)} · ~${s.minutes_saved} min saved</span>${s.runnable?`<button data-run="${s.id}">Try it →</button>`:''}</div></article>`).join('');
 }
-function expertiseGroup(person){
-  if(/finance/i.test(person.team)) return 'Finance';
-  if(/data|risk/i.test(person.team)) return 'Data';
-  if(/platform/i.test(person.team)) return 'Platform';
-  if(/sales|crm|customer success/i.test(person.team)) return 'Sales';
-  if(/legal/i.test(person.team)) return 'Legal';
-  if(/security/i.test(person.team)) return 'Security';
-  if(/cloud|infrastructure/i.test(person.team)) return 'Cloud & Infrastructure';
-  if(/enterprise apps/i.test(person.team)) return 'Enterprise Apps';
-  if(/product|mobile|payments/i.test(person.team)) return 'Product';
-  if(/workplace/i.test(person.team)) return 'Digital Workplace';
-  if(/transformation/i.test(person.team)) return 'Transformation';
-  return person.team;
-}
+const expertiseKey=value=>String(value||'').normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleLowerCase('en');
+const personExpertise=person=>String(person.skills||'').split(',').map(value=>value.normalize('NFKC').replace(/\s+/g,' ').trim()).filter(Boolean);
 function renderDirectory(){
   const q=$('#people-search').value.trim().toLowerCase();
   const people=data.people.filter(p=>p.name!=='Anastasia');
-  const baseFilters=['Finance','Data','Platform','Sales','Legal','Security','Cloud & Infrastructure','Enterprise Apps','Product','Digital Workplace','Transformation'];
-  const filters=['All',...new Set([...baseFilters,...people.map(p=>p.team).filter(Boolean)])];
+  const expertiseByKey=new Map();
+  for(const person of people)for(const area of personExpertise(person)){
+    const key=expertiseKey(area),entry=expertiseByKey.get(key);
+    if(entry)entry.count+=1;else expertiseByKey.set(key,{label:area,count:1});
+  }
+  const filters=['All',...[...expertiseByKey.values()].filter(item=>item.count>1).sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,undefined,{sensitivity:'base'})).map(item=>item.label)];
   $('#people-filters').innerHTML=filters.map(f=>`<button class="fchip ${activeFilter===f?'on':''}" data-filter="${esc(f)}">${esc(f)}</button>`).join('');
   const rows=people.filter(p=>{
-    const matchesFilter=activeFilter==='All'||expertiseGroup(p)===activeFilter||p.team===activeFilter;
+    const matchesFilter=activeFilter==='All'||personExpertise(p).some(area=>expertiseKey(area)===expertiseKey(activeFilter));
     const haystack=`${p.name} ${p.title} ${p.team} ${p.location} ${p.skills}`.toLowerCase();
     return matchesFilter&&(!q||haystack.includes(q));
   });
