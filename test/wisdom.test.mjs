@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeProfile, analyzeWisdom, validateProfileAnalysis, validateWisdomAnalysis } from '../lib/wisdom.mjs';
+import { analyzeProfile, analyzeWisdom, hasShareableArtifact, validateProfileAnalysis, validateWisdomAnalysis } from '../lib/wisdom.mjs';
 
-test('wisdom analysis keeps bounded skills, experience, and reusable solutions',()=>{
+test('wisdom analysis keeps bounded profile skills, experience, and reusable assets',()=>{
   const result=validateWisdomAnalysis({
     headline:'Useful work',summary:'Review it',skills:['Salesforce','Salesforce','Data quality'],
     experience:[{title:'Led a migration',details:'40,000 accounts'}],
@@ -23,6 +23,20 @@ test('local wisdom fallback distinguishes experience from a built solution',asyn
   assert.equal(experience.solutions.length,0);
   assert.equal(solution.solutions.length,1);
   assert.ok(solution.skills.includes('Salesforce'));
+  if(previous.base)process.env.LLM_BASE_URL=previous.base;if(previous.model)process.env.LLM_MODEL=previous.model;
+});
+
+test('a human capability never becomes a reusable asset without an explicit artifact',async()=>{
+  const previous={base:process.env.LLM_BASE_URL,model:process.env.LLM_MODEL};
+  delete process.env.LLM_BASE_URL;delete process.env.LLM_MODEL;
+  const text='Я умею вайбкодить и быстро собирать прототипы.';
+  const result=await analyzeWisdom({text,user:{},catalogue:[]});
+  assert.ok(result.skills.includes('Vibe coding'));
+  assert.equal(result.solutions.length,0);
+  assert.equal(hasShareableArtifact(text),false);
+  const guarded=validateWisdomAnalysis({profileSkills:['Vibe coding'],solutions:[{title:'Vibe coding skill',kind:'skill',summary:'Builds prototypes',evidence:'Я умею вайбкодить'}]},{sourceText:text});
+  assert.equal(guarded.solutions.length,0);
+  assert.equal(hasShareableArtifact('Я создала инструкцию для агента, которая собирает прототип.'),true);
   if(previous.base)process.env.LLM_BASE_URL=previous.base;if(previous.model)process.env.LLM_MODEL=previous.model;
 });
 

@@ -316,7 +316,7 @@ async function route(req, res) {
       if(!userId)return json(res,400,{error:'A valid profile is required.'});
       if(!text||text.length>4000)return json(res,400,{error:'Add a contribution under 4,000 characters.'});
       let analysis;
-      try{analysis=validateWisdomAnalysis(b.analysis||b);}
+      try{analysis=validateWisdomAnalysis(b.analysis||b,{sourceText:text});}
       catch(error){return json(res,400,{error:error.message});}
       const user=one('SELECT * FROM users WHERE id=?',userId),existingSkills=String(user.skills||'').split(',').map(s=>s.trim()).filter(Boolean);
       const skills=[...existingSkills];

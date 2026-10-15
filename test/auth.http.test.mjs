@@ -139,7 +139,7 @@ describe('authentication gate (dev login enabled)', () => {
 
     const saved = await client.request('/api/share', { method:'POST', json:{
       text:'I built a Salesforce agent that finds duplicate customer accounts.',
-      analysis:{headline:'A reusable agent',summary:'Review it',skills:['Salesforce data quality'],experience:[],solutions:[{title:'HTTP Test Duplicate Finder',kind:'agent',summary:'Finds likely duplicate customer accounts.',runnable:true,minutesSaved:30}]}
+      analysis:{headline:'A reusable agent',summary:'Review it',skills:['Salesforce data quality'],experience:[],solutions:[{title:'HTTP Test Duplicate Finder',kind:'agent',summary:'Finds likely duplicate customer accounts.',evidence:'I built a Salesforce agent',runnable:true,minutesSaved:30}]}
     }});
     assert.equal(saved.status,200);
     assert.deepEqual(saved.json().saved,{skills:1,experience:0,solutions:1});
