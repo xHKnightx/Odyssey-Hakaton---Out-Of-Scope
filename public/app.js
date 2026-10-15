@@ -15,13 +15,17 @@ async function api(path, options={}) {
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3400)}
 const BrowserSpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 let activeRecognition=null,activeVoiceButton=null;
+function renderComposerActions(){
+  document.querySelectorAll('[data-composer-actions]').forEach(bar=>{
+    const target=bar.dataset.composerActions,label=bar.dataset.submitLabel,title=bar.dataset.voiceTitle;
+    bar.innerHTML=`<button class="voice-button" type="button" data-voice-target="${esc(target)}" aria-label="Start voice input" aria-pressed="false" title="${esc(title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-6 9a6 6 0 0 0 12 0M12 18v3M9 21h6"/></svg></button><button class="button gold" type="submit">${esc(label)} <span>→</span></button>`;
+  });
+}
 function resetVoiceInput(){
   if(activeVoiceButton){
     activeVoiceButton.classList.remove('listening');
     activeVoiceButton.setAttribute('aria-pressed','false');
     activeVoiceButton.setAttribute('aria-label','Start voice input');
-    const hint=activeVoiceButton.closest('.oracle-composer-bar')?.querySelector('.hint');
-    if(hint?.dataset.voiceOriginal)hint.textContent=hint.dataset.voiceOriginal;
   }
   activeRecognition=null;activeVoiceButton=null;
 }
@@ -29,15 +33,12 @@ function startVoiceInput(button){
   if(!BrowserSpeechRecognition){toast('Voice input is not supported in this browser. Try Chrome or type your message.');return}
   if(activeRecognition){activeRecognition.stop();if(activeVoiceButton===button)return}
   const input=$(`#${button.dataset.voiceTarget}`);if(!input)return;
-  const hint=button.closest('.oracle-composer-bar')?.querySelector('.hint');
-  if(hint&&!hint.dataset.voiceOriginal)hint.dataset.voiceOriginal=hint.textContent;
   const base=input.value===input.defaultValue?'':input.value.trim();
   const recognition=new BrowserSpeechRecognition();
   recognition.continuous=true;recognition.interimResults=true;recognition.lang=navigator.language||'en-US';
   recognition.onstart=()=>{
     activeRecognition=recognition;activeVoiceButton=button;
     button.classList.add('listening');button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Stop voice input');
-    if(hint)hint.textContent='Listening… speak naturally, then tap the microphone to stop';
   };
   recognition.onresult=event=>{
     let transcript='';
@@ -116,8 +117,6 @@ async function loadGoogleStatus(){
 async function loadOracleStatus(){
   try{
     oracleState=await api('/api/oracle/status');
-    const hint=$('#seek-form .hint');
-    if(hint)hint.textContent='Enter to send · Shift+Enter for a new line';
   }catch(error){oracleState={configured:false};}
 }
 
@@ -274,6 +273,7 @@ document.addEventListener('click',async event=>{
 });
 
 $('#people-search').addEventListener('input',renderDirectory);
+renderComposerActions();
 document.querySelectorAll('[data-voice-target]').forEach(button=>{
   if(!BrowserSpeechRecognition){button.disabled=true;button.title='Voice input is not supported in this browser';button.setAttribute('aria-label','Voice input is not supported')}
   button.addEventListener('click',()=>startVoiceInput(button));
@@ -285,7 +285,7 @@ $('#question').addEventListener('keydown',event=>{
   if(form&&button&&!button.disabled)form.requestSubmit(button);
 });
 $('#seek-form').addEventListener('submit',async event=>{
-  event.preventDefault();const button=event.currentTarget.querySelector('button'),input=$('#question'),text=input.value.trim();if(!text)return;
+  event.preventDefault();const button=event.currentTarget.querySelector('button[type="submit"]'),input=$('#question'),text=input.value.trim();if(!text)return;
   oracleMessages.push({role:'user',content:text});input.value='';button.disabled=true;button.textContent='Consulting…';renderOracleConversation(true);
   try{
     const result=await api('/api/oracle/chat',{method:'POST',body:JSON.stringify({messages:oracleMessages.map(({role,content})=>({role,content})),userId:activeUserId})});

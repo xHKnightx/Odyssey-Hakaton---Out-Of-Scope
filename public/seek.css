@@ -10,9 +10,8 @@
 .oracle-composer:before{content:"";position:absolute;inset:5px;border:1px solid var(--line);pointer-events:none}
 .oracle-composer textarea{position:relative;width:100%;min-height:128px;padding:5px 1px 16px;border:0;outline:0;resize:vertical;background:transparent;color:var(--fg);font:500 22px/1.45 var(--verse)}
 .oracle-composer textarea::placeholder{color:var(--fg3)}
-.oracle-composer-bar{position:relative;display:flex;align-items:center;gap:16px;padding-top:11px;border-top:1px solid var(--line)}
-.oracle-composer-bar .hint{flex:1;font-size:10px}
-.oracle-composer-bar .button{min-width:100px;min-height:42px;margin-left:auto}
+.oracle-composer-bar{position:relative;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding-top:11px;border-top:1px solid var(--line)}
+.oracle-composer-bar .button{min-width:100px;min-height:42px;margin-left:0}
 .voice-button{width:42px;height:42px;display:grid;place-items:center;flex:none;padding:0;border:1px solid var(--line2);border-radius:50%;background:var(--panel2);color:var(--gold);transition:border-color .16s,background .16s,color .16s,box-shadow .16s}
 .voice-button svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .voice-button:hover{border-color:var(--gold);background:var(--gold-dim)}
@@ -114,7 +113,7 @@
 .share-confirm .button{flex:none;min-height:42px}
 .wisdom-success{margin-top:28px}
 @media(max-width:640px){
-  .seek-input-head{padding-top:15px}.oracle-composer{padding:16px 16px 11px}.oracle-composer textarea{font-size:19px}.oracle-composer-bar{align-items:flex-end}.oracle-composer-bar .hint{font-size:8px}
+  .seek-input-head{padding-top:15px}.oracle-composer{padding:16px 16px 11px}.oracle-composer textarea{font-size:19px}.oracle-composer-bar{align-items:center}
   .oracle-card{padding:27px 21px 24px}.oracle-card h1{font-size:28px}.oracle-answer{font-size:19px}.oracle-preview{align-items:flex-start}.oracle-match{display:none}
   .oracle-found-head{align-items:flex-start;flex-direction:column;gap:3px}.oracle-followup{align-items:stretch;flex-direction:column}.oracle-followup>div{margin:0 0 4px}
   .oracle-thinking{grid-template-columns:auto 1fr;margin-top:42px}.oracle-thinking ul{grid-column:1/-1}.oracle-request summary{grid-template-columns:1fr auto}.oracle-request summary>span{display:none}
