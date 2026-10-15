@@ -1,0 +1,846 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>PYTHIA for SecondStack</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the oracle's temple at night (T1A "Cyprus Odyssey" hackathon): Aegean night ground, marble text, oracle gold, red-figure terracotta; meander bands frame the page */
+:root{
+  --bg:#05080d; --panel:#0b1018; --panel-2:#101722; --raise:#172030;
+  --line:rgba(212,168,85,.16); --line-2:rgba(212,168,85,.3);
+  --fg:#efe7d6; --fg-2:#b3a88f; --fg-3:#7c7464;
+  --topbar:#070b12;
+  --accent:#d4a855; --accent-dim:rgba(212,168,85,.13); --accent-ink:#1a1206;
+  --terra:#c8643b; --terra-dim:rgba(200,100,59,.15);
+  --ok:#9cc27a; --warn:#e0a24a; --bad:#d9694c; --info:#7fa6c4;
+  --ok-dim:rgba(156,194,122,.13); --warn-dim:rgba(224,162,74,.13); --bad-dim:rgba(217,105,76,.14); --info-dim:rgba(127,166,196,.14);
+  --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --inscr:"Cinzel","Trajan Pro",Georgia,serif;
+  --verse:"Cormorant Garamond",Georgia,"Times New Roman",serif;
+  --meander:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='14' viewBox='0 0 28 14'%3E%3Cpath d='M0 13H6V3H16V9H11V6' fill='none' stroke='%23d4a855' stroke-width='1.6' stroke-linecap='square'/%3E%3Cpath d='M14 13H20V3H30' fill='none' stroke='%23d4a855' stroke-width='1.6'/%3E%3Cpath d='M0 13.2H28' stroke='%23d4a855' stroke-width='1.2'/%3E%3C/svg%3E");
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(212,168,85,.10),transparent 70%),var(--bg);background-attachment:fixed;color:var(--fg);font:14px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:flex;flex-direction:column;height:100%}
+.meander{height:14px;background:var(--meander) repeat-x left center;opacity:.55;flex:none}
+.laurel{color:var(--accent)}
+.one{font-family:var(--sans);font-weight:500;font-size:.92em}
+.co{font-family:var(--sans);font-weight:600;letter-spacing:.08em}
+.co .one{font-size:1em;font-weight:600}
+/* top bar */
+.gtop{flex:none;display:flex;align-items:center;gap:22px;min-height:60px;background:var(--topbar);padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:9px;border:0;background:none;padding:0;white-space:nowrap}
+.brand .nm{font:600 19px var(--inscr);letter-spacing:.22em;color:var(--fg)}
+.brand .by{font:500 10.5px var(--mono);letter-spacing:.06em;color:var(--fg-3);border-left:1px solid var(--line-2);padding-left:9px;margin-left:2px}
+.brand .by b{color:var(--fg-2);font-weight:500}
+.tabsnav{display:flex;gap:4px;height:60px;align-items:stretch}
+.tn{border:0;background:none;color:var(--fg-2);padding:0 12px;font:500 12.5px var(--inscr);letter-spacing:.14em;text-transform:uppercase;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tn:hover{color:var(--fg)}
+.tn.on{color:var(--accent);border-bottom-color:var(--accent)}
+.gav{width:34px;height:34px;border-radius:50%;background:var(--raise);color:var(--accent);font-family:var(--inscr)!important;display:grid;place-items:center;font-weight:600;font-size:13px;border:1px solid var(--line-2);flex:none}
+.demo-flag{font:500 10px var(--mono);letter-spacing:.08em;color:var(--fg-3);border:1px dashed var(--line-2);border-radius:5px;padding:2px 6px;white-space:nowrap}
+.view{flex:1;overflow:auto;min-height:0}
+.wrap{max-width:960px;margin:0 auto;padding-block:36px 64px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.narrow{max-width:760px}
+/* generic */
+h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.02em}
+h1{font-family:var(--inscr);font-weight:600;letter-spacing:.01em!important}
+h2{font-family:var(--inscr);letter-spacing:.02em!important}
+h2{font-size:20px;font-weight:600}
+h3{font-size:15.5px;font-weight:600}
+p{margin:0}
+.row{display:flex;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+.stack{display:flex;flex-direction:column}
+.muted{color:var(--fg-2)}
+.faint{color:var(--fg-3)}
+.eyebrow{font:500 11.5px var(--inscr);letter-spacing:.16em;text-transform:uppercase;color:var(--accent);opacity:.85}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:4px}
+.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--sans);color:#0b0d10;flex:none}
+.av.lg{width:44px;height:44px;font-size:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 14px;border-radius:3px;border:1px solid var(--line-2);background:var(--panel-2);font-weight:500;font-size:13.5px;white-space:nowrap}
+.btn:hover{background:var(--raise)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:none;border-color:transparent;color:var(--fg-2)}
+.btn.ghost:hover{color:var(--fg);background:var(--panel-2)}
+.btn.pill{border-radius:3px;padding:13px 30px;font:600 14px var(--inscr);letter-spacing:.16em;text-transform:uppercase}
+.back{border:0;background:none;color:var(--fg-2);padding:0;display:inline-flex;gap:6px;align-items:center;font-size:13.5px}
+.back:hover{color:var(--fg)}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:2px;font-size:12px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--fg-2);white-space:nowrap}
+.chip.ok{background:var(--ok-dim);border-color:transparent;color:var(--ok)}
+.chip.warn{background:var(--warn-dim);border-color:transparent;color:var(--warn)}
+.chip.bad{background:var(--bad-dim);border-color:transparent;color:var(--bad)}
+.chip.ac{background:var(--accent-dim);border-color:transparent;color:var(--accent)}
+.match{font:500 12px var(--mono);display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--fg-2)}
+.bar{height:5px;border-radius:3px;background:var(--line-2);overflow:hidden;width:64px}
+.bar i{display:block;height:100%;background:var(--accent)}
+.people-stack{display:flex}
+.people-stack .av{border:2px solid var(--panel);margin-left:-8px}
+.people-stack .av:first-child{margin-left:0}
+/* home */
+.home{min-height:100%;display:flex;flex-direction:column;justify-content:center}
+.hero{text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
+.hero h1{font-size:clamp(30px,5vw,54px);line-height:1.1}
+.hero h1 span{display:block;font:600 clamp(30px,5vw,54px)/1.1 var(--inscr);color:var(--accent);letter-spacing:0;margin-top:6px}
+.kicker{display:flex;align-items:center;gap:14px;font:500 12px var(--inscr);letter-spacing:.3em;color:var(--accent);text-transform:uppercase}
+.kicker::before,.kicker::after{content:"";width:46px;height:1px;background:var(--line-2)}
+.hero p{color:var(--fg-2);font:500 21px/1.45 var(--verse);max-width:44ch}
+.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:44px auto 0;max-width:760px}
+.choice{text-align:center;align-items:center;border:1px solid var(--line-2);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:3px;padding:34px 26px 28px;display:flex;flex-direction:column;gap:12px;position:relative;min-width:0;transition:border-color .15s,transform .15s,background .15s}
+.choice:hover{border-color:var(--accent);background:var(--panel-2);transform:translateY(-2px)}
+.choice::before{content:"";position:absolute;inset:6px;border:1px solid var(--line);pointer-events:none}
+.choice .ic{width:76px;height:76px;display:grid;place-items:center;color:var(--accent)}
+.choice.share .ic{color:var(--terra)}
+.choice b{font:600 24px var(--inscr);letter-spacing:.08em}
+.choice span{color:var(--fg-2);font:500 18px/1.4 var(--verse)}
+.choice .go{margin-top:auto;padding-top:10px;color:var(--accent);font:500 12px var(--sans)!important;letter-spacing:.18em;text-transform:uppercase}
+/* input */
+.input-screen{display:flex;flex-direction:column;align-items:center;text-align:center;gap:18px;padding-top:10px}
+.input-screen h1{font-size:clamp(26px,4vw,40px)}
+.bigmic{width:112px;height:112px;border-radius:50%;border:1px solid var(--accent);background:radial-gradient(circle at 50% 40%,#e6c27a,#b8883a);color:var(--accent-ink);display:grid;place-items:center;margin-top:10px;box-shadow:0 0 0 10px var(--accent-dim),0 0 60px rgba(212,168,85,.25)}
+.bigmic:hover{filter:brightness(1.07)}
+.bigmic.on{background:var(--bad);box-shadow:0 0 0 10px var(--bad-dim);animation:pulse 1.3s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(228,106,95,.5)}100%{box-shadow:0 0 0 26px rgba(228,106,95,0)}}
+.miclabel{font-size:13.5px;color:var(--fg-2);min-height:20px;display:flex;align-items:center;gap:8px}
+.wave{display:inline-flex;align-items:center;gap:3px;height:18px}
+.wave i{display:block;width:3px;border-radius:2px;background:var(--bad);animation:wv .9s infinite ease-in-out}
+@keyframes wv{0%,100%{height:4px}50%{height:16px}}
+.or{display:flex;align-items:center;gap:12px;width:100%;color:var(--fg-3);font:500 11px var(--inscr);text-transform:uppercase;letter-spacing:.2em}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.typebox{width:100%;text-align:left;padding:14px 16px;border-radius:3px;background:var(--panel);border:1px solid var(--line-2)}
+.typebox:focus-within{border-color:var(--accent)}
+.typebox textarea{width:100%;min-height:84px;resize:vertical;background:none;border:0;outline:none;font:500 19px/1.45 var(--verse)}
+.typebox textarea::placeholder{color:var(--fg-3)}
+.samples{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.sample{border:1px dashed var(--line-2);background:none;border-radius:2px;padding:5px 12px;font-size:12.5px;color:var(--fg-2)}
+.sample:hover{border-color:var(--accent);color:var(--accent)}
+.composer{width:100%;margin-top:14px;text-align:left;border:1px solid var(--line-2);background:linear-gradient(180deg,var(--panel-2),var(--panel));border-radius:3px;padding:18px 18px 12px;position:relative;transition:border-color .2s,box-shadow .2s}
+.composer::before{content:"";position:absolute;inset:5px;border:1px solid var(--line);pointer-events:none}
+.composer:focus-within{border-color:var(--accent)}
+.composer.listening{border-color:var(--bad);box-shadow:0 0 40px rgba(217,105,76,.15)}
+.composer textarea{width:100%;min-height:120px;resize:vertical;background:none;border:0;outline:none;font:500 21px/1.45 var(--verse);color:var(--fg);position:relative}
+.composer textarea::placeholder{color:var(--fg-3)}
+.cbar{display:flex;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--line);position:relative}
+.cbar .miclabel{font-size:12.5px;color:var(--fg-3);min-width:0}
+.cmic{width:42px;height:42px;border-radius:50%;border:1px solid var(--line-2);background:var(--panel-2);color:var(--accent);display:grid;place-items:center;flex:none}
+.cmic:hover{border-color:var(--accent)}
+.cmic.on{background:var(--bad);border-color:var(--bad);color:#fff;animation:pulse 1.3s infinite}
+.csend{height:42px;padding:0 20px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);font:600 13px var(--inscr);letter-spacing:.16em;text-transform:uppercase;flex:none}
+.csend:hover{filter:brightness(1.07)}
+/* thinking */
+.think{display:flex;flex-direction:column;gap:12px;margin:34px auto 0;width:max-content;max-width:100%}
+.step{display:flex;align-items:center;gap:12px;color:var(--fg-3);font:500 19px var(--verse)}
+.step.done{color:var(--fg-2)}
+.step.cur{color:var(--fg)}
+.step .ic{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line-2);flex:none}
+.step.done .ic{background:var(--accent);border-color:var(--accent)}
+.step.cur .ic{border-color:var(--accent);border-top-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* outcomes */
+.said{display:flex;gap:12px;align-items:baseline;color:var(--fg-2);font:italic 500 19px/1.45 var(--verse);padding:12px 16px;border-left:2px solid var(--accent)}
+.said .faint{font:500 11px var(--inscr);letter-spacing:.16em;text-transform:uppercase;font-style:normal;white-space:nowrap}
+.outcomes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:22px}
+.oc{text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:3px;padding:22px;display:flex;flex-direction:column;gap:14px;min-width:0;position:relative}
+.oc:hover{border-color:var(--line-2);background:var(--panel-2)}
+.oc.rec{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.oc .top{display:flex;align-items:center;gap:10px}
+.oc .ic{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--line-2);color:var(--fg-2);flex:none}
+.oc.rec .ic{background:var(--accent-dim);border-color:transparent;color:var(--accent)}
+.oc .n{font:600 38px/1 var(--inscr);color:var(--accent)}
+.oc .t{font:600 17px var(--inscr);letter-spacing:.05em}
+.oc .s{color:var(--fg-2);font:500 18px/1.4 var(--verse)}
+.oc .go{color:var(--accent);font-weight:500;font-size:13.5px;margin-top:auto}
+.recflag{position:absolute;top:-11px;right:16px;background:var(--accent);color:var(--accent-ink);font:600 10.5px var(--inscr);letter-spacing:.16em;padding:3px 10px;border-radius:2px}
+/* results v2 */
+.req{border:1px solid var(--line);background:var(--panel);border-radius:3px}
+.req summary{list-style:none;display:flex;align-items:center;gap:14px;padding:11px 16px;cursor:pointer}
+.req summary::-webkit-details-marker{display:none}
+.req-q{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--fg-2);font:italic 500 17px var(--verse)}
+.req-chev{color:var(--fg-3);transition:transform .2s}
+.req[open] .req-chev{transform:rotate(180deg)}
+.req[open] .req-q{visibility:hidden}
+.req-body{padding:0 16px 14px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.req-body p{font:italic 500 19px/1.45 var(--verse);color:var(--fg)}
+.oracle{margin-top:22px;position:relative;padding:34px 34px 30px;border:1px solid var(--line-2);background:radial-gradient(ellipse 70% 60% at 50% 0%,rgba(212,168,85,.10),transparent 70%),var(--panel);border-radius:3px;display:flex;flex-direction:column;gap:18px}
+.oracle::before{content:"";position:absolute;inset:6px;border:1px solid var(--line);pointer-events:none}
+.oracle-head{display:flex;align-items:center;gap:12px}
+.oracle-ic{width:46px;height:46px;border-radius:50%;border:1px solid var(--line-2);display:grid;place-items:center;color:var(--accent);background:var(--accent-dim)}
+.oracle-v{font-size:clamp(26px,3.8vw,38px);line-height:1.15}
+.oracle-say{font:500 21px/1.5 var(--verse);color:var(--fg);max-width:60ch}
+.pv{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--line-2);background:var(--bg);border-radius:3px;position:relative;flex-wrap:wrap}
+.pv-t{font:600 16px var(--inscr);letter-spacing:.04em}
+.why{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;position:relative}
+.why li{padding-left:22px;position:relative;color:var(--fg-2);font-size:14px}
+.why li::before{content:"";position:absolute;left:4px;top:8px;width:6px;height:6px;transform:rotate(45deg);background:var(--accent)}
+.oracle .btn.pill{position:relative}
+.found{margin-top:12px;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.frow{width:100%;display:flex;align-items:center;gap:14px;padding:13px 16px;border:0;border-bottom:1px solid var(--line);background:var(--panel);text-align:left}
+.frow:last-child{border-bottom:0}
+.frow:hover{background:var(--panel-2)}
+.frow .grow{display:flex;flex-direction:column;gap:2px}
+.frow-ic{width:32px;height:32px;border-radius:50%;border:1px solid var(--line-2);display:grid;place-items:center;color:var(--fg-2);flex:none}
+.frow-ic svg{width:16px;height:16px}
+.frow-t{font-weight:500;font-size:14.5px}
+.frow-n{font:600 12px var(--mono);color:var(--accent);margin-left:4px}
+.frow-d{color:var(--fg-3);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow-go{color:var(--fg-3);font-size:20px}
+@media (max-width:640px){.oracle{padding:26px 20px 22px}}
+/* share review */
+.rv-wrap{margin-top:12px;border:1px solid var(--line);border-radius:3px;background:var(--panel)}
+.rv{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.rv:last-child{border-bottom:0}
+.rv-h{display:flex;align-items:center;gap:6px}
+.skchip{padding:4px 6px 4px 10px;font-size:13px;color:var(--fg);background:var(--accent-dim);border-color:transparent}
+.skchip button{border:0;background:none;color:var(--fg-3);padding:0 3px;font-size:14px;line-height:1}
+.skchip button:hover{color:var(--bad)}
+.addsk{background:none;border:1px dashed var(--line-2);border-radius:2px;padding:3px 10px;font-size:13px;width:130px;outline:none;color:var(--fg)}
+.addsk:focus{border-color:var(--accent)}
+.rv-item{display:flex;align-items:center;gap:12px}
+.rv-item.off .grow{opacity:.4}
+.rv-item input[type=checkbox],.confirm input[type=checkbox],#notify{accent-color:var(--accent);width:16px;height:16px;flex:none}
+.inl{background:none;border:1px solid transparent;border-radius:2px;padding:3px 6px;margin-left:-7px;font-size:14px;color:var(--fg);width:100%;outline:none;resize:vertical}
+.inl:hover{border-color:var(--line)}
+.inl:focus{border-color:var(--accent);background:var(--bg)}
+.inl.strong{font:600 16px var(--inscr);letter-spacing:.03em;width:auto;flex:1;min-width:200px}
+textarea.inl{font-size:13.5px;color:var(--fg-2);line-height:1.5}
+.sel{background:var(--bg);border:1px solid var(--line-2);color:var(--fg);border-radius:2px;padding:4px 8px;font-size:12.5px}
+.empty{margin-top:12px;padding:14px 16px;border:1px dashed var(--line-2);border-radius:3px;color:var(--fg-2);font:500 18px/1.45 var(--verse)}
+.confirm{margin-top:30px;padding:20px 22px;border:1px solid var(--line-2);background:var(--panel-2);border-radius:3px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.confirm .why{flex:1;min-width:240px}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.more{margin-top:14px;color:var(--fg-2)}
+.more summary{cursor:pointer;font-size:13px;color:var(--fg-3)}
+/* detail lists */
+.list{display:flex;flex-direction:column;gap:12px;margin-top:18px}
+.item{padding:18px;display:flex;gap:16px;align-items:flex-start}
+.item .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.item .acts{display:flex;flex-direction:column;gap:6px}
+.kind{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none;background:var(--panel-2);border:1px solid var(--line-2)}
+.meta{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-3);align-items:center}
+.evidence{font-size:13px;color:var(--fg-2);display:flex;flex-direction:column;gap:3px;padding-left:12px;border-left:2px solid var(--line-2)}
+.cover{display:flex;gap:6px;flex-wrap:wrap}
+/* builder / share stepper */
+.stepper{display:flex;gap:6px;margin:22px 0 18px}
+.stepper i{flex:1;height:4px;border-radius:2px;background:var(--line-2)}
+.stepper i.f{background:var(--accent)}
+.qcard{padding:26px;display:flex;flex-direction:column;gap:18px}
+.qcard h2{font-size:24px}
+.optgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.opt{text-align:left;border:1px solid var(--line-2);background:var(--panel-2);border-radius:3px;padding:14px 16px;font-size:14px;font-weight:500}
+.opt:hover{border-color:var(--accent);color:var(--accent)}
+.spec{padding:22px;display:flex;flex-direction:column;gap:16px}
+.spec .sec{display:flex;flex-direction:column;gap:6px}
+.flow{margin:0;padding:0;display:flex;flex-direction:column;counter-reset:s}
+.flow li{list-style:none;position:relative;padding:0 0 9px 28px;font-size:13.5px;color:var(--fg-2)}
+.flow li::before{counter-increment:s;content:counter(s);position:absolute;left:0;top:1px;width:18px;height:18px;border-radius:50%;background:var(--raise);font:500 10px/18px var(--mono);text-align:center;color:var(--fg-2)}
+.success{display:flex;gap:12px;align-items:center;padding:14px 16px;border-radius:3px;background:var(--ok-dim);color:var(--ok);font-size:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field input,.field textarea{background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:9px 12px;font-size:14px;outline:none;width:100%}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.split2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start;margin-top:22px}
+/* expertise */
+.two{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:18px;margin-top:22px;align-items:start}
+.prof{padding:20px;display:flex;flex-direction:column;gap:16px}
+.skill{display:flex;align-items:center;gap:10px;font-size:13.5px}
+.lvl{display:flex;gap:2px}
+.lvl i{width:12px;height:5px;border-radius:2px;background:var(--line-2)}
+.lvl i.f{background:var(--accent)}
+.search{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel);color:var(--fg-2)}
+.search input{background:none;border:0;outline:none;flex:1;min-width:0;color:var(--fg)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.fchip{border:1px solid var(--line-2);background:none;border-radius:8px;padding:4px 10px;font-size:12.5px;color:var(--fg-2)}
+.fchip.on{background:var(--accent-dim);border-color:transparent;color:var(--accent)}
+.dir{display:flex;flex-direction:column;margin-top:12px}
+.drow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.5fr) auto;gap:14px;align-items:center;padding:13px 4px;border-bottom:1px solid var(--line)}
+/* opportunities */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:22px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.kpi .lab{font-size:11.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3)}
+.kpi .v{font:600 28px/1.1 var(--inscr);color:var(--accent)}
+.kpi .d{font:500 12.5px var(--mono);color:var(--ok)}
+.tbl-wrap{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:3px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:720px}
+th{font:500 13px var(--sans);color:var(--fg-2);text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right}
+td.num{font-family:var(--mono)}
+.hbar{display:flex;align-items:center;gap:8px}
+.hbar .b{height:8px;border-radius:2px;background:var(--accent)}
+.mono{font-family:var(--mono)}
+/* modal + toast */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:16px;z-index:30}
+.modal{width:min(520px,100%);padding:22px;display:flex;flex-direction:column;gap:14px;max-height:90vh;overflow:auto}
+.modal textarea{width:100%;min-height:130px;background:var(--bg);border:1px solid var(--line-2);border-radius:9px;padding:10px 12px;resize:vertical;font-size:13.5px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--raise);border:1px solid var(--line-2);padding:10px 16px;border-radius:10px;font-size:13.5px;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:calc(100% - 32px)}
+/* pantheon */
+.periods{display:flex;justify-content:center;gap:6px;margin-top:22px}
+.podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:end;margin-top:34px}
+.pod{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:0 10px}
+.wreath{position:relative;width:132px;height:132px;display:grid;place-items:center}
+.pod-1 .wreath{width:156px;height:156px}
+.laurel-svg{position:absolute;inset:0;width:100%;height:100%}
+.av.xl{width:72px;height:72px;font-size:22px;font-family:var(--inscr)}
+.pod-1 .av.xl{width:86px;height:86px;font-size:26px}
+.pod-rank{font:600 22px var(--inscr);letter-spacing:.1em}
+.pod-name{font:600 19px var(--inscr);letter-spacing:.04em}
+.pod-title{font:italic 500 18px var(--verse);color:var(--accent)}
+.pod-stats{display:flex;gap:16px;margin-top:6px;font-size:11.5px;color:var(--fg-3);text-transform:uppercase;letter-spacing:.08em}
+.pod-stats span{display:flex;flex-direction:column;align-items:center;gap:1px}
+.pod-stats b{font:600 20px var(--inscr);color:var(--fg);letter-spacing:0;text-transform:none}
+.pod-deed{font:500 16px/1.4 var(--verse);color:var(--fg-2);max-width:30ch;min-height:2.8em}
+.pod-base{width:100%;margin-top:8px;border:1px solid var(--line-2);border-bottom:0;background:linear-gradient(180deg,var(--panel-2),var(--panel));height:40px;position:relative}
+.pod-base::before{content:"";position:absolute;left:0;right:0;top:6px;height:14px;background:var(--meander) repeat-x center;opacity:.45}
+.pod-1 .pod-base{height:72px}
+.pod-2 .pod-base{height:48px}
+.pod-3 .pod-base{height:28px}
+.pan-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:22px;margin-top:40px;align-items:start}
+.pan-r{width:34px;font:600 14px var(--inscr);color:var(--fg-3);text-align:center;flex:none}
+.you{padding:18px;display:flex;flex-direction:column;gap:12px}
+.prog{height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent)}
+@media (max-width:820px){
+  .podium{grid-template-columns:1fr;gap:28px}
+  .pod-1{order:-1}
+  .pod-base{display:none}
+  .pan-grid{grid-template-columns:1fr}
+}
+@media (max-width:820px){
+  .choices,.outcomes,.split2,.two{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .home{justify-content:flex-start}
+}
+@media (max-width:640px){
+  .gtop{flex-wrap:wrap;gap:0 14px;padding-top:8px}
+  .tabsnav{order:3;width:100%;height:44px;overflow-x:auto}
+  .tn{padding:0 10px}
+  .brand .by,.demo-flag{display:none}
+  .item{flex-direction:column}
+  .item .acts{flex-direction:row;flex-wrap:wrap}
+  .drow{grid-template-columns:1fr}
+  .gspacer{flex:1}
+}
+.foot{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:56px;color:var(--fg-3);font:500 11px var(--inscr);letter-spacing:.24em;text-transform:uppercase}
+.foot .meander{width:min(420px,80%)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="gtop">
+    <button class="brand" data-nav="home" aria-label="PYTHIA home">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="#d4a855" stroke-width="1.6" stroke-linecap="round"><path d="M6 9h20"/><path d="M8 9c0 5 3 8 8 8s8-3 8-8"/><path d="M11 16 7 29M21 16l4 13M16 17v12"/><path d="M13 5c0-2 1.5-3 3-3M19 6c0-2-1-3-2-3"/></svg>
+      <span class="nm">PYTHIA</span><span class="by">FOR SECOND<b>STACK</b></span>
+    </button>
+    <nav class="tabsnav">
+      <button class="tn" data-nav="home">Oracle</button>
+      <button class="tn" data-nav="map">Expertise</button>
+      <button class="tn" data-nav="insights">Discoveries</button>
+      <button class="tn" data-nav="pantheon">Pantheon</button>
+    </nav>
+    <span class="grow gspacer"></span>
+    <span class="demo-flag">MOCKUP · FAKE DATA</span>
+    <div class="gav">A</div>
+  </header>
+  <div class="meander"></div>
+  <div class="view" id="view"></div>
+</div>
+<div id="layer"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const svg=(d,w=20)=>`<svg width="${w}" height="${w}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const IC={
+  solve:svg('<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',22),
+  person:svg('<circle cx="8" cy="5.5" r="2.8"/><path d="M2.8 14c.6-2.8 2.7-4.3 5.2-4.3s4.6 1.5 5.2 4.3"/>',22),
+  tripodS:'<svg width="30" height="30" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 24h36"/><path d="M17 24c0 9 6 15 15 15s15-6 15-15"/><path d="M22 36 15 58M42 36l7 22M32 39v19"/><path d="M27 18c-2-4 2-6 0-10M33 18c-2-4 2-7 0-12M39 18c-2-4 2-6 0-9" opacity=".7"/></svg>',
+  amphoraS:'<svg width="28" height="28" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M26 6h12M27 6v6c0 2-7 5-9 12-2 9 2 20 9 28h10c7-8 11-19 9-28-2-7-9-10-9-12V6"/><path d="M27 12c-6 0-9 3-9 8M37 12c6 0 9 3 9 8"/><path d="M24 58h16"/></svg>',
+  tripod:'<svg width="72" height="72" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 24h36"/><path d="M17 24c0 9 6 15 15 15s15-6 15-15"/><path d="M22 36 15 58M42 36l7 22M32 39v19"/><path d="M18 50h28"/><path d="M27 18c-2-4 2-6 0-10M33 18c-2-4 2-7 0-12M39 18c-2-4 2-6 0-9" opacity=".7"/></svg>',
+  amphora:'<svg width="72" height="72" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M26 6h12M27 6v6c0 2-7 5-9 12-2 9 2 20 9 28h10c7-8 11-19 9-28-2-7-9-10-9-12V6"/><path d="M27 12c-6 0-9 3-9 8M37 12c6 0 9 3 9 8"/><path d="M22 30h20M21 36h22" opacity=".8"/><path d="M28 52v6h8v-6"/><path d="M24 58h16"/></svg>',
+  share:svg('<path d="M8 2 13.5 5v6L8 14 2.5 11V5L8 2Z"/><path d="M8 6v4M6 8h4"/>',22),
+  skill:svg('<path d="M8 2 13.5 5v6L8 14 2.5 11V5L8 2Z"/>'),
+  agent:svg('<rect x="2.5" y="4" width="11" height="9" rx="2.5"/><path d="M8 4V2M6 8.5h0M10 8.5h0"/>'),
+  automation:svg('<path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8l1-5.5Z"/>'),
+  knowledge:svg('<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M5 6h6M5 9h4"/>'),
+  mcp:svg('<path d="M6 2v4M10 2v4M4 6h8v2a4 4 0 0 1-8 0V6ZM8 12v2.5"/>'),
+  group:svg('<circle cx="5.5" cy="6" r="2.2"/><circle cx="11" cy="6.5" r="1.8"/><path d="M1.8 13.5c.5-2.3 2-3.5 3.7-3.5s3.2 1.2 3.7 3.5M10 10.2c1.8 0 3.3 1 3.8 3.3"/>'),
+  build:svg('<path d="M10 2.5a3 3 0 0 0-3.6 4L2.5 10.4l3.1 3.1 3.9-3.9a3 3 0 0 0 4-3.6l-1.9 1.9-2-.5-.5-2L10 2.5Z"/>'),
+  mic:svg('<rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/>',40),
+  micS:svg('<rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/>',20),
+  stopS:'<svg width="16" height="16" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg>',
+  stop:'<svg width="34" height="34" viewBox="0 0 16 16"><rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor"/></svg>',
+  search:svg('<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',15),
+  check:svg('<path d="m3.5 8.5 3 3 6-7"/>',18)
+};
+
+const LAUREL=(()=>{let g='';for(let i=0;i<9;i++){const deg=255-i*15,a=deg*Math.PI/180,r=i%2?52:46,x=60+r*Math.cos(a),y=60-r*Math.sin(a),rot=-deg+90+(i%2?-28:28);g+=`<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="8.5" ry="3.4" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})"/>`}
+  return `<svg class="laurel-svg" viewBox="0 0 120 120" fill="currentColor"><g>${g}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g><g transform="translate(120 0) scale(-1 1)">${g}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g></svg>`})();
+const PEOPLE={
+  marta:{n:'Marta Kovač',i:'MK',c:'#f7a072',role:'Finance Ops Lead',team:'Finance · Zagreb',avail:'Usually replies in 2 h'},
+  aiko:{n:'Aiko Tanaka',i:'AT',c:'#8fd3c1',role:'Legal Ops Manager',team:'Legal · Amsterdam',avail:'Busy this week'},
+  priya:{n:'Priya Nair',i:'PN',c:'#c9a7ff',role:'Solutions Architect',team:'Platform · Remote',avail:'Office hours Thu 15:00'},
+  lukas:{n:'Lukas Weber',i:'LW',c:'#9cc4ff',role:'Sales Ops Engineer',team:'Sales · Munich',avail:'Usually replies in 1 h'},
+  daniel:{n:'Daniel Ortiz',i:'DO',c:'#ffd27a',role:'Senior Data Engineer',team:'Data Platform · Madrid',avail:'Usually replies same day'},
+  tomas:{n:'Tomás Silva',i:'TS',c:'#e9a1c7',role:'Procurement Analyst',team:'Procurement · Lisbon',avail:''},
+  hanna:{n:'Hanna Berg',i:'HB',c:'#a5e3a0',role:'Accountant',team:'Finance · Berlin',avail:''},
+  omar:{n:'Omar Haddad',i:'OH',c:'#f2c38b',role:'Shared Services Specialist',team:'GBS · Kraków',avail:''},
+  sofia:{n:'Sofia Rossi',i:'SR',c:'#b6b1ff',role:'Account Executive',team:'Sales · Milan',avail:''},
+  jonas:{n:'Jonas Lind',i:'JL',c:'#86d1f0',role:'Customer Success',team:'CS · Stockholm',avail:''},
+  elena:{n:'Elena Popa',i:'EP',c:'#ffb3a7',role:'BI Analyst',team:'Marketing · Bucharest',avail:''},
+  ravi:{n:'Ravi Shah',i:'RS',c:'#d8e48a',role:'Analytics Lead',team:'Risk · London',avail:''},
+  mia:{n:'Mia Novak',i:'MN',c:'#9fe0d0',role:'Product Manager',team:'Mobile · Ljubljana',avail:''},
+  karl:{n:'Karl Jensen',i:'KJ',c:'#f5b38f',role:'Product Owner',team:'Payments · Copenhagen',avail:''}
+};
+const av=(k,cls='',st='')=>{const p=PEOPLE[k];return `<div class="av ${cls}" style="background:${p.c};${st}" title="${p.n}">${p.i}</div>`};
+
+const SCEN={
+  invoices:{
+    oracle:{verdict:'Build it, but don’t start from zero.',say:'Nobody has solved this end to end yet. Two colleagues have already built half of it, and Marta Kovač solved the SAP side last year. Build a new skill on top of their work and bring Marta in as reviewer.',why:['Two existing pieces cover about 50% of the work','Marta Kovač has done this before and replies within hours','4 colleagues in 3 teams want the same thing, so it pays off beyond you'],cta:'Build it with Pythia'},
+    q:'Every month I reconcile supplier invoices from SAP against the contract terms in SharePoint by hand. It takes me about two days.',
+    rec:'build',
+    solutions:[
+      {k:'skill',name:'Contract Clause Extractor',by:'aiko',m:62,used:41,type:'Skill',desc:'Pulls payment terms, price tables and penalties out of contract PDFs into a table.',covers:[['Reads contracts','ok'],['Price & payment terms','ok'],['SAP invoices','bad'],['Mismatch report','bad']]},
+      {k:'automation',name:'SAP Export Cleaner',by:'marta',m:48,used:17,type:'Automation',desc:'Normalises SAP vendor line-item exports: dates, currencies, vendor IDs.',covers:[['SAP export','ok'],['Vendor mapping','ok'],['Contract matching','bad']]}
+    ],
+    solSummary:'Only partial matches. Two pieces cover about half of it.',
+    experts:[
+      {p:'marta',m:91,why:['Built reconciliation scripts in project “Close Faster” (2025)','Author of SAP Export Cleaner','Skills: SAP FI, month-end close, Python']},
+      {p:'aiko',m:74,why:['Author of Contract Clause Extractor','Ran the 2025 supplier contract audit']},
+      {p:'priya',m:63,why:['Set up the SharePoint connector for SecondStack']}
+    ],
+    similar:{count:4,teams:3,people:['tomas','hanna','omar'],quotes:[['tomas','“Matching invoice prices to framework agreements takes our team a week every quarter.”','12 days ago'],['hanna','“Is there an AI way to check invoices against contracts before payment?”','3 weeks ago'],['omar','“We check supplier invoices against PO and contract manually.”','5 weeks ago']]}
+  },
+  calls:{
+    oracle:{verdict:'This already exists. Use it today.',say:'Lukas Weber built exactly this. It listens to your call recording and writes the notes into Salesforce for you. 128 colleagues already use it.',why:['Covers your whole request: recording, summary, Salesforce','Used daily by 128 people in Sales and Customer Success','Set up in about 2 minutes, no building needed'],cta:'Open Call Notes → Salesforce'},
+    q:'After every customer call I spend 20 minutes writing notes into Salesforce.',
+    rec:'solutions',
+    solutions:[
+      {k:'skill',name:'Call Notes → Salesforce',by:'lukas',m:94,used:128,type:'Skill',desc:'Transcribes a call recording, writes next steps, risks and decision makers to the Salesforce opportunity.',covers:[['Recordings','ok'],['Summary & next steps','ok'],['Writes to Salesforce','ok']]},
+      {k:'agent',name:'Deal Coach',by:'lukas',m:71,used:54,type:'Agent',desc:'Reviews your open opportunities each morning and suggests follow-ups from call notes.',covers:[['Uses call notes','ok'],['Daily digest','ok']]}
+    ],
+    solSummary:'“Call Notes → Salesforce” does exactly this. 128 colleagues use it.',
+    experts:[
+      {p:'lukas',m:96,why:['Author of Call Notes → Salesforce','Maintains the Salesforce connector']},
+      {p:'priya',m:58,why:['Connected Teams recordings to SecondStack']}
+    ],
+    similar:{count:9,teams:2,people:['sofia','jonas'],quotes:[['sofia','“How do I stop retyping call notes into CRM?”','2 days ago'],['jonas','“Any tool that logs customer calls automatically?”','1 week ago']]}
+  },
+  databricks:{
+    oracle:{verdict:'Talk to Daniel Ortiz.',say:'This is a one-off change to access rights, so a person beats a tool here. Daniel has onboarded 11 teams to Unity Catalog this year and wrote the runbook. Fifteen minutes with him saves you a risky mistake.',why:['Onboarded 11 teams to Unity Catalog in 2026','Wrote the Data Platform Runbooks','Owns the permission model you are about to change'],cta:'Ask Daniel for help'},
+    q:'Who can help me give a new analytics team access to Databricks tables without breaking Unity Catalog permissions?',
+    rec:'experts',
+    solutions:[
+      {k:'knowledge',name:'Data Platform Runbooks',by:'daniel',m:81,used:203,type:'Knowledge Collection',desc:'Runbooks for Unity Catalog groups, grants and onboarding a new workspace.',covers:[['Grant patterns','ok'],['Group sync','ok'],['Your tables','warn']]},
+      {k:'mcp',name:'Access Request Helper',by:'daniel',m:70,used:36,type:'Tool',desc:'Drafts the GRANT statements and the access ticket for review.',covers:[['Drafts GRANTs','ok'],['Applies changes','bad']]}
+    ],
+    solSummary:'A runbook covers the general case, not your tables.',
+    experts:[
+      {p:'daniel',m:95,why:['Onboarded 11 teams to Unity Catalog in 2026','Author of Data Platform Runbooks','Skills: Databricks, Unity Catalog, dbt']},
+      {p:'ravi',m:71,why:['Set up analytics access for the Risk team in August']},
+      {p:'elena',m:54,why:['Solved the same question in May']}
+    ],
+    similar:{count:3,teams:3,people:['elena','ravi'],quotes:[['elena','“Need Databricks access for our new BI hires.”','May'],['ravi','“How do UC grants work with our groups?”','August']]}
+  }
+};
+const SHARE_Q='I built a Cowork agent that reads our Jira feedback tickets every Friday and sends the product team a digest of top themes.';
+const SHARES={
+  expertise:{label:'Skills & experience',q:'I’ve run month-end close in SAP FI for six years and automated most of our reconciliations with Python. Happy to help anyone stuck on month-end.',
+    head:'You know what 4 colleagues are stuck on.',say:'I found four skills and two pieces of experience. There is nothing to add to the catalog, and that’s fine: your experience is the wisdom.',
+    skills:['SAP FI','Month-end close','Python automation','Reconciliation'],
+    exp:[{t:'Six years running month-end close in SAP FI',d:'Finance Ops · 2020 to now'},{t:'Automated vendor and bank reconciliations with Python',d:'Cut the close from 6 days to 3'}],
+    sol:[],
+    match:{total:4,people:[['tomas','Asked about matching invoices to contracts','12 days ago'],['hanna','Struggles with manual reconciliations at close','3 weeks ago'],['omar','Wants to automate vendor checks in GBS','5 weeks ago']]}},
+  solution:{label:'A tool I built',q:SHARE_Q,
+    head:'7 colleagues have been asking for this.',say:'You built a reusable agent, and it shows you know Jira automation. I’ll register the agent and add the skill to your profile.',
+    skills:['Jira automation','Cowork agents'],exp:[],
+    sol:[{name:'Weekly Product Feedback Digest',type:'Cowork agent',desc:'Every Friday, groups new Jira feedback tickets into top themes and sends the product team a short digest.',dup:'No exact match in the catalog. “Release Notes Writer” overlaps 31%.',access:'Everyone at T1A'}],
+    match:{total:7,people:[['mia','“Is there a way to summarise Jira feedback every week?”','4 days ago'],['karl','“We drown in feature requests in Jira, need a digest.”','2 weeks ago'],['sofia','Asked for customer feedback themes for QBRs','3 weeks ago']]}},
+  mix:{label:'All of the above',q:'Last year I led our CRM migration to Salesforce, about 40,000 accounts. I also built an agent that finds and merges duplicate accounts. Ask me anything about Salesforce data quality.',
+    head:'Your knowledge fills a gap.',say:'You shared three kinds of wisdom at once: skills, a major project, and a working agent. Nobody in the catalog covers duplicate accounts yet.',
+    skills:['Salesforce','CRM migration','Data quality'],
+    exp:[{t:'Led the CRM migration to Salesforce',d:'2025 · 40,000 accounts · 3 countries'}],
+    sol:[{name:'Duplicate Account Cleaner',type:'Agent',desc:'Finds likely duplicate accounts in Salesforce, proposes merges and applies them after approval.',dup:'No similar solution in the catalog.',access:'Sales & Customer Success'}],
+    match:{total:3,people:[['jonas','Asked how to clean duplicate customer records','1 week ago'],['sofia','Reported broken account hierarchies','2 weeks ago'],['lukas','Maintains the Salesforce connector','related expertise']]}},
+  mentoring:{label:'Something else',q:'For three years I’ve run onboarding workshops for new engineers and mentored about twenty juniors.',
+    head:'Wisdom worth keeping.',say:'I found three skills and one piece of experience. Nobody is asking about this right now. When someone does, I’ll point them to you.',
+    skills:['Onboarding','Mentoring','Workshop facilitation'],
+    exp:[{t:'Ran onboarding workshops for new engineers',d:'3 years · about 20 mentees'}],
+    sol:[],match:{total:0,people:[]}}
+};
+
+const MODES={
+  solve:{t:'What do you seek?',sub:'An answer, an expert, or a better way. Tell Pythia what you need.',ph:'e.g. I spend two days every month matching supplier invoices to contracts…',samples:[['invoices','Invoices vs contracts'],['calls','Call notes to CRM'],['databricks','Who knows Databricks access?']]},
+  share:{t:'What wisdom will you share?',sub:'Tell Pythia what you know or what you’ve built. She’ll connect you with those who need it.',ph:'e.g. An agent that turns Jira tickets into a weekly digest…',samples:[['sh:expertise','Skills & experience'],['sh:solution','A tool I built'],['sh:mix','All of the above'],['sh:mentoring','Nobody asking yet']]}
+};
+
+const state={sh:null,view:'home',mode:'solve',scen:'invoices',text:'',detail:null,build:{ans:[]},created:false,published:false,mapFilter:'All',mapQ:'',period:'q'};
+
+function go(v){state.view=v;render();$('#view').scrollTop=0}
+function render(){
+  document.querySelectorAll('.tn').forEach(b=>b.classList.toggle('on',b.dataset.nav===({map:'map',insights:'insights',pantheon:'pantheon'}[state.view]||'home')));
+  $('#view').innerHTML=VIEWS[state.view]();bind();
+}
+const backBtn=(to,label)=>`<button class="back" data-to="${to}">← ${label}</button>`;
+const saidBox=()=>`<div class="said"><span class="faint">You said</span><span class="grow">“${state.text}”</span></div>`;
+
+const VIEWS={
+home(){
+  return `<div class="wrap home"><div>
+  <div class="hero">
+    <div class="kicker">The Oracle of <span class="co">T<span class="one">1</span>A</span></div>
+    <h1>Every problem has an answer.<span>Let’s find yours.</span></h1>
+  </div>
+  <div class="choices">
+    <button class="choice" data-mode="solve"><div class="ic">${IC.tripod}</div><b>Seek wisdom</b><span>Bring a problem. Find the solution or the colleague who has solved it.</span><span class="go">Consult the oracle →</span></button>
+    <button class="choice share" data-mode="share"><div class="ic">${IC.amphora}</div><b>Share wisdom</b><span>Your knowledge, skills, and creations could be exactly what someone else needs.</span><span class="go">Make an offering →</span></button>
+  </div>
+  <div class="foot"><div class="meander"></div></div>
+  </div></div>`;
+},
+input(){
+  const m=MODES[state.mode];
+  return `<div class="wrap narrow">${backBtn('home','Home')}
+  <div class="input-screen">
+    <h1>${m.t}</h1><p class="muted" style="font-size:16px">${m.sub}</p>
+    <div class="composer">
+      <textarea id="txt" placeholder="${m.ph}">${state.text}</textarea>
+      <div class="cbar">
+        <span class="miclabel" id="micl">Type, or press the mic and speak</span>
+        <span class="grow"></span>
+        <button class="cmic" id="mic" aria-label="Speak">${IC.micS}</button>
+        <button class="csend" id="send">${state.mode==='share'?'Share':'Ask'} <span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+    <div class="row" style="flex-wrap:wrap;justify-content:center;gap:8px"><span class="faint" style="font-size:12.5px">Try a demo:</span><div class="samples">${m.samples.map(s=>`<button class="sample" data-sample="${s[0]}">${s[1]}</button>`).join('')}</div></div>
+  </div></div>`;
+},
+thinking(){
+  const steps=state.mode==='share'
+    ?['Pythia reads what you shared','Extracting skills, experience and solutions','Checking the catalog for duplicates','Looking for colleagues who could benefit']
+    :['The oracle listens to your question','Searching 1,284 skills, agents and automations','Consulting the expertise of 3,906 colleagues','Seeking others with the same problem'];
+  return `<div class="wrap narrow">${saidBox()}<div class="think">${steps.map(t=>`<div class="step"><span class="ic"></span>${t}</div>`).join('')}</div></div>`;
+},
+outcomes(){
+  const s=SCEN[state.scen],o=s.oracle;
+  const ex=s.experts[0],sol=s.solutions[0];
+  const rows=[
+    {k:'solutions',ic:IC.knowledge,n:s.solutions.length,t:s.rec==='solutions'?'Existing solutions':'Partial solutions',d:s.solutions.map(x=>x.name).join(' · ')},
+    {k:'experts',ic:IC.person,n:s.experts.length,t:'Experts',d:s.experts.map(e=>PEOPLE[e.p].n).join(' · ')},
+    {k:'similar',ic:IC.group,n:s.similar.count,t:'Colleagues with the same problem',d:`In ${s.similar.teams} teams, the latest ${s.similar.quotes[0][2]}`}
+  ];
+  if(s.rec!=='build') rows.push({k:'build',ic:IC.build,n:'',t:'Build something new',d:'Start a new skill or agent if nothing above fits'});
+  const preview={
+    build:`<div class="pv"><div class="kind" style="color:var(--accent)">${IC.skill}</div><div class="grow"><div class="pv-t">Invoice ↔ Contract Reconciler</div><div class="faint" style="font-size:13px">New skill · reuses 2 existing pieces · Marta Kovač as reviewer</div></div></div>`,
+    solutions:`<div class="pv"><div class="kind" style="color:var(--accent)">${IC[sol.k]}</div><div class="grow"><div class="pv-t">${sol.name}</div><div class="faint" style="font-size:13px">${sol.type} by ${PEOPLE[sol.by].n} · used by ${sol.used} people</div></div><span class="match">${sol.m}% match<span class="bar"><i style="width:${sol.m}%"></i></span></span></div>`,
+    experts:`<div class="pv">${av(ex.p,'lg')}<div class="grow"><div class="pv-t">${PEOPLE[ex.p].n}</div><div class="faint" style="font-size:13px">${PEOPLE[ex.p].role} · ${PEOPLE[ex.p].avail}</div></div><span class="match">${ex.m}% fit<span class="bar"><i style="width:${ex.m}%"></i></span></span></div>`
+  }[s.rec];
+  return `<div class="wrap narrow">
+  <details class="req"><summary><span class="eyebrow" style="opacity:1">Your request</span><span class="req-q">“${state.text}”</span><span class="req-chev">▾</span></summary>
+    <div class="req-body"><p>“${state.text}”</p><button class="btn ghost" data-to="input">Edit request</button></div></details>
+  <section class="oracle">
+    <div class="oracle-head"><div class="oracle-ic">${IC.tripodS}</div><div class="eyebrow" style="opacity:1">The Oracle has spoken</div></div>
+    <h1 class="oracle-v">${o.verdict}</h1>
+    <p class="oracle-say">${o.say}</p>
+    ${preview}
+    <ul class="why">${o.why.map(w=>`<li>${w}</li>`).join('')}</ul>
+    <div class="row" style="flex-wrap:wrap;gap:14px"><button class="btn primary pill" id="cta">${o.cta}</button></div>
+  </section>
+  <section style="margin-top:34px">
+    <div class="row" style="align-items:baseline"><h2 style="font-size:16px" class="grow">What Pythia found</h2><span class="faint" style="font-size:12.5px">Other paths, if the advice doesn’t fit</span></div>
+    <div class="found">${rows.map(r=>`<button class="frow" data-detail="${r.k}"><span class="frow-ic">${r.ic}</span><span class="grow"><span class="frow-t">${r.t}${r.n!==''?` <span class="frow-n">${r.n}</span>`:''}</span><span class="frow-d">${r.d}</span></span><span class="frow-go">›</span></button>`).join('')}</div>
+  </section></div>`;
+},
+detail(){
+  const s=SCEN[state.scen],d=state.detail;
+  const title={solutions:'Existing solutions',experts:'People who can help',similar:'Same problem, other teams'}[d];
+  return `<div class="wrap">${backBtn(state.mode==='person'?'input':'outcomes',state.mode==='person'?'Change request':'Back to the Oracle')}
+  <div class="row" style="margin-top:18px;flex-wrap:wrap"><h2 class="grow">${title}</h2></div>
+  ${state.mode==='person'?`<div style="margin-top:14px">${saidBox()}</div>`:''}
+  <div class="list">${DETAIL[d](s)}</div>
+  ${state.mode==='person'?`<p class="faint" style="margin-top:18px;font-size:13px">Also found: <button class="back" style="color:var(--accent)" data-detail="solutions">${s.solutions.length} related resources</button></p>`:''}</div>`;
+},
+build(){
+  const Q=[
+    {q:'Where do the invoices come from?',o:['SAP export (CSV / Excel)','SAP via API','PDFs in a mailbox']},
+    {q:'Where are the contract terms?',o:['SharePoint library','A Knowledge Collection','Not sure']},
+    {q:'What should happen when an invoice doesn’t match?',o:['Flag it in a report','Draft an email to the supplier','Open a ticket']},
+    {q:'How should it run?',o:['When I ask for it','Automatically every month']}
+  ];
+  const a=state.build.ans,i=a.length;
+  const bar=`<div class="stepper">${Q.map((_,j)=>`<i class="${j<i?'f':''}"></i>`).join('')}</div>`;
+  if(i<Q.length) return `<div class="wrap narrow">${backBtn(i?'build-undo':'outcomes',i?'Previous question':'All results')}${bar}
+    <div class="card qcard"><div class="eyebrow">Question ${i+1} of ${Q.length}</div><h2>${Q[i].q}</h2>
+    <div class="optgrid">${Q[i].o.map(o=>`<button class="opt" data-ans="${o}">${o}</button>`).join('')}</div></div></div>`;
+  const sched=a[3].startsWith('Auto');
+  return `<div class="wrap narrow">${backBtn('outcomes','All results')}${bar}
+    ${state.created?`<div class="success">${IC.check}<span>Draft created. Marta Kovač is invited to review it, and the 4 colleagues with the same problem will be notified when it’s published.</span></div>`:''}
+    <div class="card spec" style="margin-top:${state.created?'14px':'0'}">
+      <div class="row"><div class="kind" style="color:var(--accent)">${IC.skill}</div><div class="grow"><div class="eyebrow">Draft ${sched?'agent':'skill'}</div><h3 style="font-size:19px">Invoice ↔ Contract Reconciler</h3></div><span class="chip ${state.created?'warn':'ok'}">${state.created?'In review':'Ready'}</span></div>
+      <div class="sec"><div class="eyebrow">What it does</div><ol class="flow">
+        <li>Takes the ${a[0].toLowerCase()} and cleans it with <b>SAP Export Cleaner</b> (reused)</li>
+        <li>Reads contract terms from the ${a[1].toLowerCase()} with <b>Contract Clause Extractor</b> (reused)</li>
+        <li>Matches each invoice line to the contract price and payment terms</li>
+        <li>${a[2]}</li>
+      </ol></div>
+      <div class="sec"><div class="eyebrow">Runs</div><p class="muted">${sched?'First working day of every month, 07:00':'When you ask: “reconcile October invoices”'}</p></div>
+      <div class="sec"><div class="eyebrow">Impact</div><p class="muted">About 14 hours saved a month for you. 4 colleagues in 3 teams want the same thing.</p></div>
+      <div class="row" style="flex-wrap:wrap">${state.created?'<button class="btn" data-to="home">Back to home</button>':'<button class="btn primary" id="create">Create draft</button><button class="btn" data-ask="marta">Ask Marta to help</button>'}</div>
+    </div></div>`;
+},
+shareResult(){
+  const x=state.sh,sk=x.skills,ex=x.exp.filter(e=>e.on),so=x.sol.filter(e=>e.on);
+  const parts=[];
+  if(sk.length||ex.length)parts.push(`Updates your expertise profile with ${sk.length?sk.length+' skill'+(sk.length>1?'s':''):''}${sk.length&&ex.length?' and ':''}${ex.length?ex.length+' experience':''}`);
+  if(so.length)parts.push(`Registers ${so.length} solution${so.length>1?'s':''} in the catalog`);
+  if(x.match.total&&x.notify)parts.push(`Lets ${x.match.total} colleague${x.match.total>1?'s':''} know`);
+  const nothing=!sk.length&&!ex.length&&!so.length;
+  if(x.saved) return `<div class="wrap narrow">
+    <section class="oracle">
+      <div class="oracle-head"><div class="oracle-ic">${IC.amphoraS}</div><div class="eyebrow" style="opacity:1">Your wisdom is shared</div></div>
+      <h1 class="oracle-v">Thank you. It is now part of the Oracle.</h1>
+      <ul class="why">${parts.map(p=>`<li>${p.replace('Updates','Updated').replace('Registers','Registered').replace('Lets ','Let ')}</li>`).join('')}<li>Colleagues will find it when they Seek wisdom${so.length?', within the access you set':''}</li></ul>
+      <div class="row" style="flex-wrap:wrap;gap:10px;position:relative"><button class="btn primary" data-to="map">See your profile</button><button class="btn" data-nav2="share">Share more wisdom</button></div>
+    </section></div>`;
+  const sec=(title,count,body)=>`<div class="rv"><div class="rv-h"><span class="eyebrow" style="opacity:1">${title}</span><span class="frow-n">${count}</span></div>${body}</div>`;
+  return `<div class="wrap narrow">
+  <details class="req"><summary><span class="eyebrow" style="opacity:1">You shared</span><span class="req-q">“${state.text}”</span><span class="req-chev">▾</span></summary>
+    <div class="req-body"><p>“${state.text}”</p><button class="btn ghost" data-to="input">Edit</button></div></details>
+  <section class="oracle" style="gap:12px">
+    <div class="oracle-head"><div class="oracle-ic">${IC.amphoraS}</div><div class="eyebrow" style="opacity:1">Pythia discovered</div></div>
+    <h1 class="oracle-v">${x.head}</h1>
+    <p class="oracle-say">${x.say}</p>
+  </section>
+  <div class="row" style="margin-top:30px;align-items:baseline;flex-wrap:wrap"><h2 style="font-size:16px" class="grow">Review before saving</h2><span class="faint" style="font-size:12.5px">Remove or correct anything Pythia got wrong</span></div>
+  <div class="rv-wrap">
+    ${sec('Skills',sk.length,`<div class="cover">${sk.map((k,i)=>`<span class="chip skchip">${k}<button aria-label="Remove ${k}" data-rmskill="${i}">×</button></span>`).join('')}<input class="addsk" id="addsk" placeholder="+ Add a skill"></div>`)}
+    ${x.exp.length?sec('Experience',ex.length,x.exp.map((e,i)=>`<label class="rv-item ${e.on?'':'off'}"><input type="checkbox" data-exp="${i}" ${e.on?'checked':''}><span class="grow stack" style="gap:2px"><input class="inl" data-expt="${i}" value="${e.t}"><span class="faint" style="font-size:12.5px">${e.d}</span></span></label>`).join('')):''}
+    ${x.sol.length?sec('Reusable solutions',so.length,x.sol.map((o,i)=>`<div class="rv-item ${o.on?'':'off'}" style="align-items:flex-start"><input type="checkbox" data-sol="${i}" ${o.on?'checked':''} aria-label="Include ${o.name}"><div class="grow stack" style="gap:8px">
+        <div class="row" style="flex-wrap:wrap;gap:8px"><input class="inl strong" data-soln="${i}" value="${o.name}"><span class="chip">${o.type}</span></div>
+        <textarea class="inl" rows="2" data-sold="${i}">${o.desc}</textarea>
+        <div class="row" style="flex-wrap:wrap;gap:8px;font-size:12.5px"><span class="faint">Who can use it</span><select class="sel" data-sola="${i}">${['Everyone at T1A','Sales & Customer Success','My team only'].map(a=>`<option ${a===o.access?'selected':''}>${a}</option>`).join('')}</select></div>
+      </div></div>`).join('')):''}
+  </div>
+  <div class="row" style="margin-top:30px;align-items:baseline"><h2 style="font-size:16px" class="grow">Who might benefit</h2>${x.match.total?`<span class="frow-n">${x.match.total}</span>`:''}</div>
+  ${x.match.total?`<div class="found" style="margin-top:12px">${x.match.people.map(m=>`<div class="frow" style="cursor:default">${av(m[0])}<span class="grow"><span class="frow-t">${PEOPLE[m[0]].n} <span class="faint" style="font-weight:400;font-size:12.5px">· ${PEOPLE[m[0]].team}</span></span><span class="frow-d">${m[1]} · ${m[2]}</span></span></div>`).join('')}${x.match.total>x.match.people.length?`<div class="frow" style="cursor:default"><span class="frow-d" style="padding-left:4px">+${x.match.total-x.match.people.length} more</span></div>`:''}</div>
+    <label class="row" style="margin-top:10px;font-size:13.5px;color:var(--fg-2);gap:8px"><input type="checkbox" id="notify" ${x.notify?'checked':''}>Let them know when I share</label>`
+  :`<p class="empty">Nobody is asking about this right now. Your wisdom will still be saved, and Pythia will point people to you when they need it.</p>`}
+  <div class="confirm">
+    <ul class="why">${nothing?'<li>Nothing selected to save</li>':parts.map(p=>`<li>${p}</li>`).join('')}</ul>
+    <button class="btn primary pill" id="saveShare" ${nothing?'disabled':''}>Save &amp; share</button>
+  </div>
+  <details class="more"><summary>Details</summary><div class="stack" style="gap:8px;padding-top:10px">
+    ${x.sol.map(o=>`<p class="muted" style="font-size:13px"><b style="font-weight:500;color:var(--fg)">${o.name}:</b> ${o.dup}</p>`).join('')}
+    <p class="muted" style="font-size:13px">Skills and experience appear on your profile in Expertise and in Seek wisdom results. Solutions follow the access you chose. Your original message is not shown to anyone.</p>
+    <p class="muted" style="font-size:13px">You can edit or remove anything later from your profile.</p>
+  </div></details>
+  </div>`;
+},
+map(){
+  const dirPeople=[
+    ['marta',['SAP FI','Month-end close','Python'],'Finance'],['daniel',['Databricks','Unity Catalog','dbt'],'Data'],['priya',['Connectors','SharePoint','Integrations'],'Platform'],
+    ['lukas',['Salesforce','CRM automation','Prompting'],'Sales'],['aiko',['Contract analysis','Compliance'],'Legal'],['ravi',['Risk models','SQL','Databricks'],'Data'],['elena',['Power BI','Marketing analytics'],'Data']
+  ];
+  const f=state.mapFilter,q=state.mapQ.toLowerCase();
+  const rows=dirPeople.filter(r=>(f==='All'||r[2]===f)&&(!q||PEOPLE[r[0]].n.toLowerCase().includes(q)||r[1].join(' ').toLowerCase().includes(q)));
+  const mine=[['Product discovery',4],['Banking UX',3],['Prompt design',3]];
+  if(state.sh&&state.sh.saved) state.sh.skills.forEach(k=>mine.push([k,3]));
+  return `<div class="wrap">
+  <div class="eyebrow">Expertise</div><h2 style="margin-top:4px;font-size:26px">Who knows what, based on real work</h2>
+  <div class="two">
+    <div class="card prof">
+      <div class="row"><div class="av lg" style="background:#d9b6e8">AN</div><div><h3>Anastasia</h3><div class="faint" style="font-size:12.5px">Product · Digital</div></div></div>
+      <div class="stack" style="gap:9px"><div class="eyebrow">Your skills</div>
+        ${mine.map(s=>`<div class="skill"><span class="grow">${s[0]}</span><span class="lvl">${[1,2,3,4,5].map(i=>`<i class="${i<=s[1]?'f':''}"></i>`).join('')}</span></div>`).join('')}
+      </div>
+      <div class="stack" style="gap:8px"><div class="eyebrow">Suggested by PYTHIA</div>
+        ${[['Customer research','14 interviews in “Mobile onboarding 2026”'],['Hackathon facilitation','Organised t1a hackathon']].map(s=>`<div class="stack" style="gap:3px;padding:9px 11px;border:1px solid var(--line);border-radius:9px"><div class="row"><span class="grow" style="font-size:13.5px">${s[0]}</span><button class="btn ghost" style="padding:2px 8px" data-toast="Added ${s[0]} to your profile">Confirm</button></div><span class="faint" style="font-size:12px">${s[1]}</span></div>`).join('')}
+      </div>
+    </div>
+    <div>
+      <div class="search">${IC.search}<input id="mapQ" placeholder="Search people or skills, e.g. “Unity Catalog”" value="${state.mapQ}"></div>
+      <div class="filters">${['All','Finance','Data','Platform','Sales','Legal'].map(x=>`<button class="fchip ${x===f?'on':''}" data-filter="${x}">${x}</button>`).join('')}</div>
+      <div class="dir">${rows.map(r=>{const p=PEOPLE[r[0]];return `<div class="drow"><div class="row">${av(r[0])}<div style="min-width:0"><div style="font-weight:500">${p.n}</div><div class="faint" style="font-size:12px">${p.role} · ${p.team}</div></div></div><div class="cover">${r[1].map(s=>`<span class="chip">${s}</span>`).join('')}</div><button class="btn" data-ask="${r[0]}">Ask for help</button></div>`}).join('')||'<p class="faint" style="padding:20px 4px">No one matches yet. Try a broader skill.</p>'}</div>
+    </div>
+  </div></div>`;
+},
+pantheon(){
+  const F={m:.34,q:1,y:3.6}[state.period];
+  const N=v=>Math.round(v*F).toLocaleString('en-US');
+  const H=[
+    {p:'lukas',title:'Patron of Sales',wis:6,helped:214,hours:1280,deed:'“Call Notes → Salesforce” is used by 128 colleagues every day'},
+    {p:'daniel',title:'Keeper of the Data',wis:4,helped:97,hours:640,deed:'Brought 11 teams safely into Unity Catalog'},
+    {p:'marta',title:'Guardian of the Ledger',wis:3,helped:63,hours:410,deed:'Her SAP Export Cleaner saved Finance two days every close'},
+    {p:'priya',title:'Builder of Bridges',wis:5,helped:58,hours:350},
+    {p:'aiko',title:'Reader of Contracts',wis:2,helped:41,hours:270},
+    {p:'ravi',title:'Seer of Risk',wis:2,helped:33,hours:190},
+    {p:'elena',title:'Teller of Numbers',wis:1,helped:27,hours:120}
+  ];
+  const medal=['#e3c06b','#c9ccd2','#c98a5a'];
+  const pod=i=>{const h=H[i],p=PEOPLE[h.p];return `<div class="pod pod-${i+1}">
+    <div class="wreath" style="color:${medal[i]}">${LAUREL}${av(h.p,'xl')}</div>
+    <div class="pod-rank" style="color:${medal[i]}">${['I','II','III'][i]}</div>
+    <div class="pod-name">${p.n}</div><div class="pod-title">${h.title}</div>
+    <div class="pod-stats"><span><b>${N(h.helped)}</b>helped</span><span><b>${N(h.hours)}</b>hours saved</span><span><b>${h.wis}</b>shared</span></div>
+    <p class="pod-deed">${h.deed}</p>
+    <div class="pod-base"></div></div>`};
+  return `<div class="wrap">
+  <div class="hero" style="gap:10px">
+    <div class="kicker">The Pantheon</div>
+    <h1 style="font-size:clamp(30px,4.6vw,48px)">Honoring those who share their wisdom.</h1>
+  </div>
+  <div class="periods">${[['m','This month'],['q','This quarter'],['y','All time']].map(x=>`<button class="fchip ${state.period===x[0]?'on':''}" data-period="${x[0]}">${x[1]}</button>`).join('')}</div>
+  <div class="podium">${pod(1)}${pod(0)}${pod(2)}</div>
+  <div class="pan-grid">
+    <div>
+      <h2 style="font-size:16px">The heroes</h2>
+      <div class="found" style="margin-top:12px">${H.slice(3).map((h,j)=>`<div class="frow" style="cursor:default"><span class="pan-r">${['IV','V','VI','VII'][j]}</span>${av(h.p)}<span class="grow"><span class="frow-t">${PEOPLE[h.p].n} <span class="faint" style="font-size:12.5px;font-weight:400">· ${h.title}</span></span><span class="frow-d">${N(h.helped)} colleagues helped · ${N(h.hours)} hours saved · ${h.wis} shared</span></span><button class="btn ghost" data-toast="Thanks sent to ${PEOPLE[h.p].n}">Thank</button></div>`).join('')}</div>
+    </div>
+    <div class="stack" style="gap:14px">
+      <div class="card you"><div class="eyebrow">Your standing</div>
+        <div class="row">${'<div class="av lg" style="background:#d9b6e8">AN</div>'}<div class="grow"><div style="font:600 17px var(--inscr)">XII · Anastasia</div><div class="faint" style="font-size:12.5px">${N(19)} colleagues helped · 1 shared</div></div></div>
+        <div class="prog"><i style="width:62%"></i></div>
+        <p class="muted" style="font-size:13px">Help 8 more colleagues to enter the top ten. Mia Novak and 6 others are waiting for your Jira digest.</p>
+        <button class="btn primary" data-nav2="share">Share wisdom</button>
+      </div>
+      <div class="card you"><div class="eyebrow">Recent gratitude</div>
+        ${[['jonas','lukas','“Saved me an hour a day.”'],['ravi','daniel','“Fifteen minutes that avoided a broken prod.”'],['tomas','marta','“Finally, month-end without spreadsheets.”']].map(t=>`<div class="row" style="align-items:flex-start">${av(t[0])}<div class="grow" style="font-size:13px"><b style="font-weight:500">${PEOPLE[t[0]].n.split(' ')[0]}</b> <span class="faint">thanked</span> <b style="font-weight:500">${PEOPLE[t[1]].n.split(' ')[0]}</b><div style="font:italic 500 16px var(--verse);color:var(--fg-2)">${t[2]}</div></div></div>`).join('')}
+      </div>
+    </div>
+  </div></div>`;
+},
+insights(){
+  const C=[
+    ['Invoice ↔ contract checks',38,5,'Gap',112,'bad'],
+    ['Call notes into CRM',61,2,'Covered',0,'ok'],
+    ['Weekly status reports from Jira',34,7,'Partial',58,'warn'],
+    ['Translating tender documents',27,4,'Covered',0,'ok'],
+    ['Databricks access requests',22,6,'Partial',30,'warn'],
+    ['Onboarding checklists for new hires',19,8,'Gap',41,'bad'],
+    ['Summarising RFP requirements',16,3,'Gap',36,'bad']
+  ];
+  const max=Math.max(...C.map(c=>c[1]));
+  return `<div class="wrap">
+  <div class="row" style="flex-wrap:wrap;gap:8px"><div class="grow"><div class="eyebrow">Discoveries · last 30 days</div><h2 style="margin-top:4px;font-size:26px">Where teams keep hitting the same wall</h2></div></div>
+  <div class="kpis">
+    <div class="kpi"><span class="lab">Problems asked</span><span class="v">412</span><span class="d">+18.0%</span></div>
+    <div class="kpi"><span class="lab">Solved by reuse</span><span class="v">46%</span><span class="d">+6.2%</span></div>
+    <div class="kpi"><span class="lab">New builds</span><span class="v">45</span><span class="d">+12</span></div>
+    <div class="kpi"><span class="lab">Hours saved</span><span class="v">1,730</span><span class="d" style="color:var(--fg-3)">self-reported</span></div>
+  </div>
+  <h3 style="margin-top:30px">Recurring problems</h3>
+  <p class="muted" style="font-size:13.5px;margin-top:4px">Similar questions grouped together. “Gap” means nobody has built a solution yet.</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Problem</th><th>Requests</th><th class="num">Teams</th><th>Coverage</th><th class="num">Hours lost / mo</th><th></th></tr></thead>
+    <tbody>${C.map(c=>`<tr><td style="font-weight:500">${c[0]}</td><td><div class="hbar"><div class="b" style="width:${Math.round(c[1]/max*110)}px"></div><span class="mono faint">${c[1]}</span></div></td><td class="num">${c[2]}</td><td><span class="chip ${c[5]}">${c[3]}</span></td><td class="num">${c[4]||'—'}</td><td style="text-align:right">${c[3]==='Covered'?'<button class="btn ghost" data-toast="Shows the skill that covers this">View solution</button>':`<button class="btn" data-toast="Sent to the AI team backlog with ${c[1]} linked requests">Propose automation</button>`}</td></tr>`).join('')}</tbody>
+  </table></div></div>`;
+}
+};
+
+const DETAIL={
+solutions(s){
+  return s.solutions.map(x=>`<div class="card item"><div class="kind" style="color:var(--accent)">${IC[x.k]}</div><div class="body">
+    <div class="row" style="flex-wrap:wrap;gap:8px"><h3>${x.name}</h3><span class="chip">${x.type}</span><span class="grow"></span><span class="match">${x.m}% match<span class="bar"><i style="width:${x.m}%"></i></span></span></div>
+    <p class="muted" style="font-size:13.5px">${x.desc}</p>
+    <div class="cover">${x.covers.map(c=>`<span class="chip ${c[1]}">${c[1]==='ok'?'✓':c[1]==='bad'?'✕':'~'} ${c[0]}</span>`).join('')}</div>
+    <div class="meta"><span class="row" style="gap:6px">${av(x.by,'','width:18px;height:18px;font-size:8px')}${PEOPLE[x.by].n}</span><span>Used by ${x.used} people</span></div>
+  </div><div class="acts"><button class="btn ${x.m>85?'primary':''}" data-toast="Opens “${x.name}” in SecondStack">Open in SecondStack</button><button class="btn ghost" data-ask="${x.by}">Ask the author</button></div></div>`).join('');
+},
+experts(s){
+  return s.experts.map((e,i)=>{const p=PEOPLE[e.p];return `<div class="card item">${av(e.p,'lg')}<div class="body">
+    <div class="row" style="flex-wrap:wrap;gap:8px"><h3>${p.n}</h3><span class="faint" style="font-size:12.5px">${p.role} · ${p.team}</span><span class="grow"></span><span class="match">${e.m}% fit<span class="bar"><i style="width:${e.m}%"></i></span></span></div>
+    <div class="evidence">${e.why.map(w=>`<span>${w}</span>`).join('')}</div>
+    <div class="meta"><span>${p.avail}</span></div>
+  </div><div class="acts"><button class="btn ${i===0?'primary':''}" data-ask="${e.p}">Ask for help</button></div></div>`}).join('');
+},
+similar(s){
+  const sm=s.similar;
+  return `<div class="card" style="padding:20px;display:flex;flex-direction:column;gap:16px">
+    <div class="row" style="flex-wrap:wrap"><div class="people-stack">${sm.people.map(p=>av(p)).join('')}</div><div class="grow"><h3>${sm.count} colleagues in ${sm.teams} teams asked the same thing</h3><p class="muted" style="font-size:13px">Grouped by meaning, not keywords.</p></div><button class="btn primary" id="group">Start a group</button></div>
+    <div class="stack" style="gap:12px">${sm.quotes.map(q=>`<div class="row" style="align-items:flex-start">${av(q[0])}<div class="grow"><div style="font-size:13px"><b style="font-weight:500">${PEOPLE[q[0]].n}</b> <span class="faint">· ${PEOPLE[q[0]].team} · ${q[2]}</span></div><p class="muted" style="font-size:13.5px">${q[1]}</p></div></div>`).join('')}</div>
+    ${sm.count>sm.quotes.length?`<p class="faint" style="font-size:12.5px">+${sm.count-sm.quotes.length} more who chose to stay anonymous.</p>`:''}
+  </div>`;
+}
+};
+
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;$('#layer').appendChild(t);setTimeout(()=>t.remove(),2800)}
+function modal(html){const l=$('#layer');l.innerHTML=`<div class="scrim" id="scrim"><div class="card modal">${html}</div></div>`;$('#scrim').addEventListener('click',e=>{if(e.target.id==='scrim'||e.target.closest('[data-close]'))l.innerHTML=''})}
+function askModal(k){
+  const p=PEOPLE[k];
+  const topic=state.text||'something I’m working on';
+  modal(`<div class="row">${av(k,'lg')}<div class="grow"><h3>Ask ${p.n}</h3><div class="faint" style="font-size:12.5px">${p.role} · ${p.avail||p.team}</div></div></div>
+  <label class="eyebrow" for="askMsg">Message, drafted by PYTHIA</label>
+  <textarea id="askMsg">Hi ${p.n.split(' ')[0]}, PYTHIA suggested you might know this one: ${topic}\n\nWould you have 15 minutes this week?</textarea>
+  <div class="row" style="flex-wrap:wrap"><span class="chip">via Teams</span><span class="grow"></span><button class="btn ghost" data-close>Cancel</button><button class="btn primary" id="sendAsk">Send</button></div>`);
+  $('#sendAsk').onclick=()=>{$('#layer').innerHTML='';toast(`Sent to ${p.n}. The reply will come in Teams.`)};
+}
+function groupModal(){
+  const s=SCEN[state.scen];
+  modal(`<h3>Start a group</h3><p class="muted" style="font-size:13.5px">PYTHIA invites the ${s.similar.count} colleagues who asked the same question and shares what it found.</p>
+  <div class="people-stack">${s.similar.people.map(p=>av(p)).join('')}</div>
+  <div class="row"><span class="grow"></span><button class="btn ghost" data-close>Cancel</button><button class="btn primary" id="mkGroup">Create group</button></div>`);
+  $('#mkGroup').onclick=()=>{$('#layer').innerHTML='';toast('Group created. Invitations sent.')};
+}
+function pickScen(t){
+  if(state.mode==='share'){const hit=Object.entries(SHARES).find(([k,x])=>x.q===t);const k=hit?hit[0]:/built|agent|tool|automat/i.test(t)?'mix':'expertise';const d=JSON.parse(JSON.stringify(SHARES[k]));state.sh={k,...d,skills:d.skills.slice(),exp:d.exp.map(e=>({...e,on:true})),sol:d.sol.map(x=>({...x,on:true})),notify:true,saved:false};return;}
+  const hit=Object.entries(SCEN).find(([k,s])=>s.q===t);
+  state.scen=hit?hit[0]:state.mode==='person'||/databricks|access|unity|table|who /i.test(t)?'databricks':/call|crm|salesforce|notes/i.test(t)?'calls':'invoices';
+}
+function submit(){
+  const t=$('#txt').value.trim();
+  if(!t){toast('Say or type something first, or pick a demo');return}
+  state.text=t;pickScen(t);state.build={ans:[]};state.created=false;state.published=false;
+  go('thinking');
+  const steps=[...document.querySelectorAll('.step')];let i=0;
+  (function tick(){steps.forEach((s,j)=>s.className='step'+(j<i?' done':j===i?' cur':''));
+    if(i<steps.length){i++;setTimeout(tick,450)}
+    else setTimeout(()=>{if(state.mode==='share')go('shareResult');else if(state.mode==='person'){state.detail='experts';go('detail')}else go('outcomes')},250)})();
+}
+function bind(){
+  const v=$('#view');
+  v.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{state.mode=b.dataset.mode;state.text='';go('input')});
+  v.querySelectorAll('[data-to]').forEach(b=>b.onclick=()=>{const to=b.dataset.to;if(to==='build-undo'){state.build.ans.pop();render();return}go(to)});
+  v.querySelectorAll('[data-sample]').forEach(b=>b.onclick=()=>{const k=b.dataset.sample;$('#txt').value=k.startsWith('sh:')?SHARES[k.slice(3)].q:SCEN[k].q});
+  const send=$('#send');if(send)send.onclick=submit;
+  const mic=$('#mic');if(mic)mic.onclick=()=>{
+    if(mic.classList.contains('on'))return;
+    const text=state.mode==='share'?SHARES.mix.q:state.mode==='person'?SCEN.databricks.q:SCEN.invoices.q;
+    mic.classList.add('on');mic.innerHTML=IC.stopS;$('.composer').classList.add('listening');
+    $('#micl').innerHTML='<span class="wave"><i></i><i style="animation-delay:.1s"></i><i style="animation-delay:.2s"></i><i style="animation-delay:.3s"></i></span>The oracle is listening…';
+    const ta=$('#txt');ta.value='';let i=0;
+    setTimeout(function type(){ta.value=text.slice(0,i);i+=3;if(i<=text.length+3)setTimeout(type,24);else setTimeout(submit,500)},700);
+  };
+  v.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>{const d=b.dataset.detail;if(d==='build'){state.build={ans:[]};go('build')}else{state.detail=d;go('detail')}});
+  v.querySelectorAll('[data-ans]').forEach(b=>b.onclick=()=>{state.build.ans.push(b.dataset.ans);render()});
+  const cta=$('#cta');if(cta)cta.onclick=()=>{const r=SCEN[state.scen].rec;if(r==='build'){state.build={ans:[]};go('build')}else if(r==='experts')askModal(SCEN[state.scen].experts[0].p);else if(r==='similar')groupModal();else toast('Opens “'+SCEN[state.scen].solutions[0].name+'” in SecondStack')};
+  const cr=$('#create');if(cr)cr.onclick=()=>{state.created=true;render()};
+  if(state.view==='shareResult'&&state.sh){const x=state.sh;
+    v.querySelectorAll('[data-rmskill]').forEach(b=>b.onclick=e=>{e.preventDefault();x.skills.splice(+b.dataset.rmskill,1);render()});
+    const ad=$('#addsk');if(ad)ad.onkeydown=e=>{if(e.key==='Enter'&&ad.value.trim()){x.skills.push(ad.value.trim());render();$('#addsk').focus()}};
+    v.querySelectorAll('[data-exp]').forEach(b=>b.onchange=()=>{x.exp[+b.dataset.exp].on=b.checked;render()});
+    v.querySelectorAll('[data-sol]').forEach(b=>b.onchange=()=>{x.sol[+b.dataset.sol].on=b.checked;render()});
+    v.querySelectorAll('[data-expt]').forEach(b=>b.oninput=()=>{x.exp[+b.dataset.expt].t=b.value});
+    v.querySelectorAll('[data-soln]').forEach(b=>b.oninput=()=>{x.sol[+b.dataset.soln].name=b.value});
+    v.querySelectorAll('[data-sold]').forEach(b=>b.oninput=()=>{x.sol[+b.dataset.sold].desc=b.value});
+    v.querySelectorAll('[data-sola]').forEach(b=>b.onchange=()=>{x.sol[+b.dataset.sola].access=b.value});
+    const nt=$('#notify');if(nt)nt.onchange=()=>{x.notify=nt.checked;render()};
+    const sv=$('#saveShare');if(sv)sv.onclick=()=>{x.saved=true;state.published=true;go('shareResult')};
+  }
+  const gr=$('#group');if(gr)gr.onclick=groupModal;
+  v.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>askModal(b.dataset.ask));
+  v.querySelectorAll('[data-toast]').forEach(b=>b.onclick=()=>toast(b.dataset.toast));
+  v.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{state.period=b.dataset.period;render()});
+  v.querySelectorAll('[data-nav2]').forEach(b=>b.onclick=()=>{state.mode=b.dataset.nav2;state.text='';go('input')});
+  v.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.mapFilter=b.dataset.filter;render()});
+  const mq=$('#mapQ');if(mq)mq.oninput=()=>{state.mapQ=mq.value;const pos=mq.selectionStart;render();const n=$('#mapQ');n.focus();n.setSelectionRange(pos,pos)};
+}
+document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav));
+render();
+</script>
+
+</body></html>
