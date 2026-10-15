@@ -13,7 +13,7 @@ import { currentUser } from './lib/auth/context.mjs';
 import { saveOwnProfile } from './lib/auth/profile.mjs';
 import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
-import { analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
+import { analyzeProfile, analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -176,6 +176,14 @@ async function route(req, res) {
       const user=one('SELECT id,title,team,skills FROM users WHERE id=?',userId);
       const catalogue=all('SELECT title,kind,summary FROM solutions ORDER BY id');
       try{return json(res,200,await analyzeWisdom({text,user,catalogue}));}
+      catch(error){return json(res,422,{error:error.message});}
+    }
+    if (req.method === 'POST' && url.pathname === '/api/profile/analyze') {
+      const b=await body(req),text=String(b.text||'').trim();
+      if(!resolveUserId(b.userId))return json(res,400,{error:'A valid profile is required.'});
+      if(!text)return json(res,400,{error:'Tell Pythia what you do and what you know first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep the introduction under 4,000 characters.'});
+      try{return json(res,200,await analyzeProfile(text));}
       catch(error){return json(res,422,{error:error.message});}
     }
     if (req.method === 'GET' && url.pathname === '/api/google/status') {

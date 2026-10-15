@@ -101,6 +101,19 @@ describe('authentication gate (dev login enabled)', () => {
     assert.equal(own.json().person.title, 'Principal Designer');
   });
 
+  it('drafts first-login profile fields without saving or publishing solutions', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const before=(await client.request('/api/overview')).json();
+    const response=await client.request('/api/profile/analyze',{method:'POST',json:{text:'I lead Salesforce CRM migrations and improve data quality.'}});
+    assert.equal(response.status,200);
+    assert.equal(response.json().mode,'local');
+    assert.ok(response.json().skills.includes('Salesforce'));
+    assert.equal(response.json().team,'CRM');
+    const after=(await client.request('/api/overview')).json();
+    assert.equal(after.people.find(person=>person.id===persona.id).skills,before.people.find(person=>person.id===persona.id).skills);
+    assert.equal(after.solutions.length,before.solutions.length);
+  });
+
   it('puts the Oracle behind sign-in and answers as the signed-in person', async () => {
     const anonymous = app.client();
     assert.equal((await anonymous.request('/api/oracle/status')).status, 401);

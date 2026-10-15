@@ -76,10 +76,41 @@
     set('availability', user.availability);
     set('skills', own('skills'));
     set('experience', user.experience);
+    $('#profile-story').value = '';
+    $('#profile-ai-status').textContent = 'Nothing is saved until you review and submit the profile.';
     $('#create-profile-dialog h2').textContent = me.profileComplete ? 'Your profile' : 'Welcome to PYTHIA';
     $('#create-profile-dialog .profile-form-intro').textContent = me.profileComplete
       ? 'Keep your role and skills current so colleagues can find you.'
       : 'Tell colleagues what you do and what you know. You can change this at any time.';
+  }
+
+  async function analyzeProfile() {
+    const story = $('#profile-story').value.trim();
+    const button = $('#analyze-profile');
+    const status = $('#profile-ai-status');
+    if (!story) { status.textContent = 'Write a short introduction first.'; $('#profile-story').focus(); return; }
+    button.disabled = true;
+    button.textContent = 'Extracting…';
+    status.textContent = 'Pythia is drafting your profile fields…';
+    try {
+      const response = await nativeFetch('/api/profile/analyze', { method:'POST', headers:jsonHeaders, body:JSON.stringify({ text:story }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Profile analysis failed (${response.status}).`);
+      const form = $('#create-profile-form');
+      if (result.title) form.elements.title.value = result.title;
+      if (result.team) form.elements.team.value = result.team;
+      if (result.skills?.length) form.elements.skills.value = result.skills.join(', ');
+      if (result.experience) form.elements.experience.value = result.experience;
+      status.textContent = result.mode === 'llm'
+        ? 'Drafted by the live LLM. Review every field before saving.'
+        : `Drafted with local extraction${result.fallbackReason ? ` because the LLM was unavailable` : ''}. Review every field.`;
+      form.elements.title.focus();
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Extract with Pythia →';
+    }
   }
 
   async function boot() {
@@ -89,6 +120,7 @@
     const button = $('#create-profile');
     button.textContent = 'Edit my profile';
     button.addEventListener('click', async () => fillProfileForm(await getMe()));
+    $('#analyze-profile').addEventListener('click', analyzeProfile);
     if (!me.profileComplete) {
       fillProfileForm(me);
       $('#create-profile-dialog').showModal();

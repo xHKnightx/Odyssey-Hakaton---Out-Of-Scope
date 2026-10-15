@@ -30,6 +30,8 @@ Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in
 
 Share Wisdom uses the same configured chat model to extract skills, experience, and reusable solutions from a free-text contribution. The contributor reviews and edits the draft before confirmation; confirmed profile data and catalogue solutions are stored locally and indexed for Seek Wisdom. Shared catalogue agents are not executable until a runner integration is added.
 
+On first sign-in, a colleague can optionally describe their work in free text and use **Extract with Pythia** to draft role, team, skills, and experience. The draft is review-only until the profile form is submitted and never publishes catalogue solutions.
+
 ## Signing in
 
 Every page and API call needs a session. The login page offers two ways in:

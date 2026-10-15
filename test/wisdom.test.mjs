@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeWisdom, validateWisdomAnalysis } from '../lib/wisdom.mjs';
+import { analyzeProfile, analyzeWisdom, validateProfileAnalysis, validateWisdomAnalysis } from '../lib/wisdom.mjs';
 
 test('wisdom analysis keeps bounded skills, experience, and reusable solutions',()=>{
   const result=validateWisdomAnalysis({
@@ -23,5 +23,18 @@ test('local wisdom fallback distinguishes experience from a built solution',asyn
   assert.equal(experience.solutions.length,0);
   assert.equal(solution.solutions.length,1);
   assert.ok(solution.skills.includes('Salesforce'));
+  if(previous.base)process.env.LLM_BASE_URL=previous.base;if(previous.model)process.env.LLM_MODEL=previous.model;
+});
+
+test('profile analysis returns editable profile fields without catalogue solutions',async()=>{
+  const previous={base:process.env.LLM_BASE_URL,model:process.env.LLM_MODEL};
+  delete process.env.LLM_BASE_URL;delete process.env.LLM_MODEL;
+  const validated=validateProfileAnalysis({title:'CRM Architect',team:'CRM',skills:['Salesforce','Salesforce'],experience:'Led CRM migrations.'});
+  assert.deepEqual(validated.skills,['Salesforce']);
+  const result=await analyzeProfile('I lead Salesforce CRM migrations and improve data quality.');
+  assert.equal(result.mode,'local');
+  assert.equal(result.team,'CRM');
+  assert.ok(result.skills.includes('Salesforce'));
+  assert.equal('solutions' in result,false);
   if(previous.base)process.env.LLM_BASE_URL=previous.base;if(previous.model)process.env.LLM_MODEL=previous.model;
 });
