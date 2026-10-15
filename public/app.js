@@ -90,28 +90,64 @@ async function loadOracleStatus(){
   }catch(error){oracleState={configured:false};}
 }
 
+function showSeekState(name){
+  for(const state of ['home','consult','results'])$(`#seek-${state}`).hidden=state!==name;
+  document.querySelector('main>.notice').hidden=name!=='home';
+  if(name==='consult')setTimeout(()=>$('#question').focus({preventScroll:true}),0);
+  // State changes can dramatically shorten the page. Reset the previous
+  // result-page scroll position after layout settles so the next screen does
+  // not open with its header clipped.
+  requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'smooth'}));
+}
+
+function oracleVerdict(result){
+  const rec=result.recommendation||{};
+  if(rec.type==='solution'&&result.solution)return result.solution.runnable?'This already exists. Use it today.':'Start with what already works.';
+  if(rec.type==='person'&&result.people?.length)return `Talk to ${result.people[0].name}.`;
+  if(rec.type==='build')return 'Build it, but don’t start from zero.';
+  return 'Here is the clearest way forward.';
+}
+
 function oracleRecommendation(result){
   const rec=result.recommendation||{};
   if(rec.type==='solution'&&result.solution){
     const solution=result.solution;
-    return `<article class="oracle-rec"><div class="kind">${esc(solution.kind)}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p><small>${esc(rec.reason||'')} · ${Math.round(rec.confidence||0)}% confidence</small><div class="answer-actions">${solution.runnable?`<button class="button gold" data-run="${solution.id}" data-request="${result.requestId}">Run this solution →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div></article>`;
+    return `<article class="oracle-preview"><div class="oracle-preview-icon">◇</div><div class="grow"><div class="kind">${esc(solution.kind)}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p></div><div class="oracle-match"><b>${Math.round(rec.confidence||0)}%</b><span>match</span></div></article><div class="oracle-primary-actions">${solution.runnable?`<button class="button gold" data-run="${solution.id}" data-request="${result.requestId}">Run ${esc(solution.title)} →</button>`:''}<button class="button" data-view="expertise">Explore expertise</button></div>`;
   }
   if(rec.type==='person'&&result.people?.length){
-    return `<article class="oracle-rec"><div class="kind">RECOMMENDED COLLEAGUES</div><div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person)}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span></button>`).join('')}</div><small>${esc(rec.reason||'')}</small></article>`;
+    return `<div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person,'lg')}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span><span class="oracle-person-go">›</span></button>`).join('')}</div><div class="oracle-primary-actions"><button class="button gold" data-person="${result.people[0].id}">Ask ${esc(result.people[0].name.split(' ')[0])} for help →</button><button class="button" data-view="expertise">See all expertise</button></div>`;
   }
   if(rec.type==='build'){
     const steps=(rec.instructions||[]).map(step=>`<li>${esc(step)}</li>`).join('');
-    return `<article class="oracle-rec build-rec"><div class="kind">BUILD A NEW ${/agent/i.test(rec.title||'')?'AGENT':'SKILL'}</div><h3>${esc(rec.title||'New PYTHIA skill')}</h3>${steps?`<ol>${steps}</ol>`:''}<small>${esc(rec.reason||'No strong catalogue match was found.')}</small><div class="answer-actions"><button class="button" data-action="share">Save as an offering</button></div></article>`;
+    return `<article class="oracle-preview build-preview"><div class="oracle-preview-icon">⬡</div><div class="grow"><div class="kind">NEW ${/agent/i.test(rec.title||'')?'AGENT':'SKILL'}</div><h3>${esc(rec.title||'New PYTHIA skill')}</h3><p>Turn this request into a reusable capability for the next colleague.</p></div></article>${steps?`<ol class="oracle-build-steps">${steps}</ol>`:''}<div class="oracle-primary-actions"><button class="button gold" data-action="share">Build it with Pythia →</button><button class="button" data-view="expertise">Find a reviewer</button></div>`;
   }
   return '';
 }
 
+function oracleWhy(result){
+  const rec=result.recommendation||{},retrieval=result.retrieval||{},items=[];
+  if(rec.reason)items.push(rec.reason);
+  if(retrieval.solutionCandidates)items.push(`${retrieval.solutionCandidates} relevant solution candidate${retrieval.solutionCandidates===1?' was':'s were'} checked.`);
+  if(retrieval.peopleCandidates)items.push(`${retrieval.peopleCandidates} expertise candidate${retrieval.peopleCandidates===1?' was':'s were'} compared locally.`);
+  if(rec.confidence)items.push(`Recommendation confidence: ${Math.round(rec.confidence)}%.`);
+  return items.slice(0,3).map(item=>`<li>${esc(item)}</li>`).join('');
+}
+
+function oracleFound(result){
+  const rec=result.recommendation||{},retrieval=result.retrieval||{};
+  return `<section class="oracle-found"><div class="oracle-found-head"><h2>What Pythia found</h2><span>Other paths, if the advice doesn’t fit</span></div><div class="found"><button class="frow" data-toast="Pythia ranked the closest catalogue matches for this request."><span class="frow-ic">◇</span><span class="grow"><span class="frow-t">Relevant solutions <b>${retrieval.solutionCandidates||0}</b></span><span class="frow-d">Ranked by semantic similarity and exact search</span></span><span class="frow-go">›</span></button><button class="frow" data-view="expertise"><span class="frow-ic">◎</span><span class="grow"><span class="frow-t">People who can help <b>${retrieval.peopleCandidates||result.people?.length||0}</b></span><span class="frow-d">Skills, role, team, and experience were compared</span></span><span class="frow-go">›</span></button>${rec.type==='build'?'<button class="frow" data-action="share"><span class="frow-ic">⬡</span><span class="grow"><span class="frow-t">Build something new</span><span class="frow-d">Save the proposed skill or agent as an offering</span></span><span class="frow-go">›</span></button>':''}</div></section>`;
+}
+
 function renderOracleConversation(waiting=false){
-  const thread=$('#answer');
-  thread.hidden=false;
-  thread.classList.add('oracle-thread');
-  thread.innerHTML=oracleMessages.map(message=>`<div class="oracle-message ${message.role}"><div class="oracle-role">${message.role==='user'?'YOU':'PYTHIA'}</div><div class="oracle-copy">${esc(message.content).replace(/\n/g,'<br>')}</div>${message.result?oracleRecommendation(message.result):''}</div>`).join('')+(waiting?'<div class="oracle-message assistant thinking"><div class="oracle-role">PYTHIA</div><div class="oracle-copy">Consulting the catalogue and expertise directory…</div></div>':'');
-  thread.scrollIntoView({behavior:'smooth',block:'end'});
+  const thread=$('#answer'),question=[...oracleMessages].reverse().find(message=>message.role==='user')?.content||'';
+  showSeekState('results');
+  if(waiting){
+    thread.innerHTML=`<details class="oracle-request"><summary><span>YOUR REQUEST</span><q>${esc(question)}</q><b>⌄</b></summary><p>${esc(question)}</p></details><div class="oracle-thinking"><div class="oracle-thinking-mark"><span></span></div><div><div class="eyebrow">PYTHIA IS CONSULTING THE ORACLE</div><h1>Looking for the strongest path.</h1></div><ul><li class="done">Understanding your question</li><li class="active">Searching solutions and agents</li><li>Consulting the expertise directory</li><li>Preparing a grounded recommendation</li></ul></div>`;
+    return;
+  }
+  const message=[...oracleMessages].reverse().find(item=>item.role==='assistant'),result=message?.result;
+  if(!result){thread.innerHTML=`<button class="seek-back" type="button" data-seek-followup>← Try again</button><section class="oracle-card error"><div class="oracle-card-head"><div class="oracle-emblem">!</div><div class="eyebrow">THE ORACLE COULD NOT ANSWER</div></div><h1>Let’s try that once more.</h1><p class="oracle-answer">${esc(message?.content||'Something went wrong.')}</p></section>`;return;}
+  thread.innerHTML=`<details class="oracle-request"><summary><span>YOUR REQUEST</span><q>${esc(question)}</q><b>⌄</b></summary><div><p>${esc(question)}</p><button class="seek-back" type="button" data-change-request>Edit request</button></div></details><section class="oracle-card"><div class="oracle-card-head"><div class="oracle-emblem">♜</div><div class="eyebrow">THE ORACLE HAS SPOKEN</div></div><h1>${esc(oracleVerdict(result))}</h1><p class="oracle-answer">${esc(result.answer).replace(/\n/g,'<br>')}</p>${oracleRecommendation(result)}<ul class="oracle-why">${oracleWhy(result)}</ul></section>${oracleFound(result)}<div class="oracle-followup"><div><div class="eyebrow">KEEP THE CONVERSATION GOING</div><p>Pythia remembers this request and the recommendation.</p></div><button class="button gold" type="button" data-seek-followup>Ask a follow-up →</button><button class="button" type="button" data-seek-home>New request</button></div>`;
 }
 
 function personDetail(id){
@@ -159,7 +195,11 @@ document.addEventListener('click',async event=>{
   const periodButton=event.target.closest('[data-period]');if(periodButton){period=periodButton.dataset.period;await load();return}
   const thanks=event.target.closest('[data-thank-user]');if(thanks){const targetId=Number(thanks.dataset.thankUser);if(!targetId)return;thanks.disabled=true;try{const result=await api('/api/thanks',{method:'POST',body:JSON.stringify({userId:activeUserId,targetId})});await load();toast(result.award.points?`Thank-you sent · +1 Laurel · colleague received +5`:(result.message||'Thank-you recorded'))}catch(error){thanks.disabled=false;toast(error.message)}return}
   const confirmSkill=event.target.closest('[data-confirm-skill]');if(confirmSkill){const skillName=confirmSkill.dataset.confirmSkill;confirmSkill.disabled=true;try{const result=await api('/api/skills/confirm',{method:'POST',body:JSON.stringify({userId:activeUserId,skill:skillName})});await load();toast(result.award.points?`${skillName} confirmed · +1 Laurel`:`${skillName} is already on the profile`)}catch(error){confirmSkill.disabled=false;toast(error.message)}return}
-  if(event.target.closest('#seek-choice')){$('#seek-form').hidden=false;$('#seek-form').scrollIntoView({behavior:'smooth',block:'center'});$('#question').focus({preventScroll:true});return}
+  if(event.target.closest('#seek-choice')){showSeekState('consult');return}
+  if(event.target.closest('[data-seek-home]')){oracleMessages=[];$('#question').value='';$('#question').placeholder='e.g. I spend two days every month matching supplier invoices to contracts…';$('#seek-question-title').textContent='What do you seek?';showSeekState('home');return}
+  if(event.target.closest('[data-seek-followup]')){$('#seek-question-title').textContent='What else would you like to know?';$('#question').placeholder='Ask a follow-up about this recommendation…';showSeekState('consult');return}
+  if(event.target.closest('[data-change-request]')){const previous=[...oracleMessages].reverse().find(message=>message.role==='user')?.content||'';oracleMessages=[];$('#seek-question-title').textContent='What do you seek?';$('#question').value=previous;showSeekState('consult');return}
+  const sample=event.target.closest('[data-seek-sample]');if(sample){$('#question').value=sample.dataset.seekSample;$('#question').focus();return}
   if(event.target.closest('[data-action="share"]')){$('#share-dialog').showModal();return}
   if(event.target.closest('#share-dialog .close')){$('#share-dialog').close();return}
   const runner=event.target.closest('[data-run]');if(runner){run(runner.dataset.run,runner.dataset.request);return}
@@ -186,7 +226,7 @@ $('#seek-form').addEventListener('submit',async event=>{
     else if(result.mode==='local')toast('Oracle is using local matching. Add LLM settings in .env for live chat.');
     input.placeholder='Ask a follow-up question…';
   }catch(error){oracleMessages.push({role:'assistant',content:`I could not complete that request: ${error.message}`});renderOracleConversation();toast(error.message)}
-  finally{button.disabled=false;button.innerHTML='Send <span>→</span>';input.focus({preventScroll:true})}
+  finally{button.disabled=false;button.innerHTML='Ask <span>→</span>'}
 });
 $('#share-form').addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const result=await api('/api/share',{method:'POST',body:JSON.stringify({title:form.get('title'),body:form.get('body'),userId:activeUserId})});$('#share-dialog').close();event.currentTarget.reset();await load();toast(result.award.points?`Your offering was saved · +${result.award.points} laurels`:`Your offering was saved · ${result.award.reason==='weekly_cap'?'weekly reward cap reached':'duplicate offering earned no laurels'}`)}catch(error){toast(error.message)}});
 $('#share-dialog .close').addEventListener('click',()=>$('#share-dialog').close());
