@@ -20,6 +20,15 @@ Email bodies are not fetched or stored. The app keeps the OAuth token in `data/g
 
 If Google reports `access_denied`, the account may not be listed as an OAuth test user, the Workspace administrator may block the scopes, or an API is not enabled.
 
+## Signing in to PYTHIA with Google
+
+The same OAuth client and the same redirect URI (`http://localhost:3000/auth/google/callback`) also serve the sign-in page, so there is nothing extra to register. Sign-in requests only `openid email profile` and accepts only accounts on `AUTH_ALLOWED_DOMAINS` (default `t1a.com`); the Calendar and Gmail scopes above are requested later, from **Connections → Connect Google**.
+
+- While the OAuth consent screen is **External / Testing**, only the accounts listed as test users can complete either step. Add every teammate who will sign in.
+- **Connect Google** only accepts the Google account you signed in with. If you pick another account, the connection is refused and the grant is revoked.
+- Each person has their own token file in `data/google-tokens/<profile id>.json` (owner-only permissions). A token saved by the earlier single-user version (`data/google-token.json`) is handed to the profile with the same email the first time that person signs in.
+- To demo on a real calendar, sign in on the demo machine as the calendar's owner and connect Google there.
+
 ## Running Calendar Breather
 
 1. In PYTHIA, open Oracle and seek help with a calendar-heavy week.
