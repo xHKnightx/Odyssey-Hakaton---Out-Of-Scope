@@ -86,6 +86,12 @@ The model must choose one of three recommendation types:
 
 The model cannot select arbitrary records. Returned solution and person IDs are checked against the retrieved candidate set. Invalid IDs are discarded; an invalid solution recommendation becomes `build`.
 
+## Share Wisdom flow
+
+Share Wisdom mirrors the prototype's review-first flow. `POST /api/share/analyze` sends the colleague's free-text offering to the configured SecondStack chat model. `lib/wisdom.mjs` asks for bounded structured JSON containing profile skills, experience evidence, and reusable solutions (`skill`, `agent`, `automation`, `guide`, `tool`, or `knowledge`). The server validates and truncates every model-produced field before returning a review draft. If the model is unavailable, a deterministic local extractor provides a clearly labelled fallback draft.
+
+Nothing is written during analysis. The colleague can edit or deselect every extracted item. `POST /api/share` then stores the original contribution, merges confirmed skills and experience into the signed-in user's profile, and inserts confirmed non-duplicate solutions into the local catalogue. Newly shared agents are catalogue records only and remain non-runnable until a real executor is integrated. The updated profile and new solutions are immediately added to FTS5 and, when configured, their embeddings are refreshed.
+
 ## Hybrid candidate retrieval
 
 Hybrid retrieval is implemented in `lib/retrieval.mjs` and combines two independent signals.
@@ -125,6 +131,9 @@ An employee is re-indexed when:
 - a profile is created with `POST /api/people`;
 - a skill is confirmed with `POST /api/skills/confirm`;
 - role, team, skills, or experience changes through `PATCH /api/people/:id`.
+- confirmed Share Wisdom skills or experience are saved with `POST /api/share`.
+
+A solution is indexed when it is confirmed through Share Wisdom. Exact title matches already in the catalogue are reported as duplicates and are not inserted again.
 
 At startup, all FTS5 rows are refreshed. Embeddings are requested only when the searchable content hash changed or when `EMBEDDING_MODEL` changed. This prevents repeated embedding calls for unchanged records.
 
@@ -134,12 +143,13 @@ Names remain in local SQLite and are never included in employee embedding text o
 
 Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
 
-The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. Profile role, team, skills, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
+The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and skills but not the person's name or account identifiers. Profile role, team, skills, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
 
 - If embeddings fail, Oracle uses exact FTS5 retrieval.
 - If the chat model fails, Oracle uses its deterministic local recommendation fallback over the retrieved candidates.
+- If Share Wisdom extraction fails, the review screen uses its deterministic local extractor and labels that mode before anything can be saved.
 - If both external services are unavailable, the application remains usable with local exact search.
 - Google Calendar and Gmail are optional; Calendar Breather uses seeded demo data when Google is not connected.
 - If Google sign-in is not configured, the demo persona login keeps the application usable; once Google credentials are set, persona login is off unless `AUTH_DEV_LOGIN=1`.

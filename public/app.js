@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 let data=null, googleState=null, oracleState=null, currentRun=null, activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
-let oracleMessages=[];
+let oracleMessages=[],wisdomDraft=null,wisdomText='';
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path, options={}) {
   const response=await fetch(path,{...options,headers:{'content-type':'application/json',...(options.headers||{})}});
@@ -91,13 +91,37 @@ async function loadOracleStatus(){
 }
 
 function showSeekState(name){
-  for(const state of ['home','consult','results'])$(`#seek-${state}`).hidden=state!==name;
+  const states=['seek-home','seek-consult','seek-results','share-consult','share-results'];
+  const active=name.includes('-')?name:`seek-${name}`;
+  for(const state of states)$(`#${state}`).hidden=state!==active;
   document.querySelector('main>.notice').hidden=name!=='home';
-  if(name==='consult')setTimeout(()=>$('#question').focus({preventScroll:true}),0);
+  if(active==='seek-consult')setTimeout(()=>$('#question').focus({preventScroll:true}),0);
+  if(active==='share-consult')setTimeout(()=>$('#share-text').focus({preventScroll:true}),0);
   // State changes can dramatically shorten the page. Reset the previous
   // result-page scroll position after layout settles so the next screen does
   // not open with its header clipped.
   requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'smooth'}));
+}
+
+function renderWisdomReview(waiting=false,saved=null){
+  const target=$('#share-answer');showSeekState('share-results');
+  if(waiting){
+    target.innerHTML=`<details class="oracle-request"><summary><span>YOU SHARED</span><q>${esc(wisdomText)}</q><b>⌄</b></summary><p>${esc(wisdomText)}</p></details><div class="oracle-thinking wisdom-thinking"><div class="oracle-thinking-mark"><span></span></div><div><div class="eyebrow">PYTHIA IS READING YOUR OFFERING</div><h1>Finding what others can reuse.</h1></div><ul><li class="done">Reading what you shared</li><li class="active">Extracting skills and experience</li><li>Identifying reusable solutions</li><li>Checking the wisdom catalogue</li></ul></div>`;
+    return;
+  }
+  if(saved){
+    const parts=[];
+    if(saved.saved.skills)parts.push(`${saved.saved.skills} skill${saved.saved.skills===1?'':'s'} added to your expertise profile.`);
+    if(saved.saved.experience)parts.push(`${saved.saved.experience} experience item${saved.saved.experience===1?'':'s'} added to your profile.`);
+    if(saved.saved.solutions)parts.push(`${saved.saved.solutions} reusable solution${saved.saved.solutions===1?'':'s'} published in the catalogue.`);
+    if(saved.duplicates?.length)parts.push(`${saved.duplicates.length} existing catalogue item${saved.duplicates.length===1?' was':'s were'} not duplicated.`);
+    target.innerHTML=`<section class="oracle-card wisdom-success"><div class="oracle-card-head"><div class="oracle-emblem">✓</div><div class="eyebrow">YOUR WISDOM IS SHARED</div></div><h1>Thank you. It is now part of the Oracle.</h1><ul class="oracle-why">${parts.map(item=>`<li>${esc(item)}</li>`).join('')}<li>People can now find it through Seek Wisdom and Expertise.</li></ul><div class="oracle-primary-actions"><button class="button gold" type="button" data-view="expertise">See your profile →</button><button class="button" type="button" data-share-new>Share more wisdom</button></div></section>`;
+    return;
+  }
+  const x=wisdomDraft,skills=x.skills.map((skill,index)=>`<label class="share-review-item share-skill-row"><input class="share-include" type="checkbox" checked><input data-share-skill="${index}" value="${esc(skill)}" maxlength="60" aria-label="Skill"></label>`).join('');
+  const experience=x.experience.map((item,index)=>`<label class="share-review-item"><input class="share-include" type="checkbox" checked><span class="grow"><input class="share-inline strong" data-share-experience-title="${index}" value="${esc(item.title)}" maxlength="160"><textarea class="share-inline" data-share-experience-details="${index}" rows="2" maxlength="400">${esc(item.details)}</textarea></span></label>`).join('');
+  const solutions=x.solutions.map((item,index)=>`<label class="share-review-item share-solution"><input class="share-include" type="checkbox" checked><span class="grow"><span class="share-solution-head"><input class="share-inline strong" data-share-solution-title="${index}" value="${esc(item.title)}" maxlength="120"><select data-share-solution-kind="${index}">${['skill','agent','automation','guide','tool','knowledge'].map(kind=>`<option ${kind===item.kind?'selected':''}>${kind}</option>`).join('')}</select></span><textarea class="share-inline" data-share-solution-summary="${index}" rows="3" maxlength="800">${esc(item.summary)}</textarea></span></label>`).join('');
+  target.innerHTML=`<details class="oracle-request"><summary><span>YOU SHARED</span><q>${esc(wisdomText)}</q><b>⌄</b></summary><div><p>${esc(wisdomText)}</p><button class="seek-back" type="button" data-share-edit>Edit</button></div></details><section class="oracle-card wisdom-discovered"><div class="oracle-card-head"><div class="oracle-emblem">♢</div><div class="eyebrow">PYTHIA DISCOVERED · ${x.mode==='llm'?'LIVE LLM':'LOCAL FALLBACK'}</div></div><h1>${esc(x.headline)}</h1><p class="oracle-answer">${esc(x.summary)}</p></section><div class="share-review-head"><div><h2>Review before saving</h2><p>Remove or correct anything Pythia got wrong.</p></div></div><form id="share-review-form" class="share-review">${skills?`<section><div class="share-section-head"><span>SKILLS</span><b>${x.skills.length}</b></div>${skills}</section>`:''}${experience?`<section><div class="share-section-head"><span>EXPERIENCE</span><b>${x.experience.length}</b></div>${experience}</section>`:''}${solutions?`<section><div class="share-section-head"><span>REUSABLE SOLUTIONS</span><b>${x.solutions.length}</b></div>${solutions}</section>`:''}<div class="share-confirm"><ul class="oracle-why"><li>Selected skills and experience update your Expertise profile.</li><li>Selected solutions become searchable in the wisdom catalogue.</li><li>Your original message stays in the local contribution history.</li></ul><button class="button gold" type="submit">Save &amp; share →</button></div></form>`;
 }
 
 function oracleVerdict(result){
@@ -196,12 +220,14 @@ document.addEventListener('click',async event=>{
   const thanks=event.target.closest('[data-thank-user]');if(thanks){const targetId=Number(thanks.dataset.thankUser);if(!targetId)return;thanks.disabled=true;try{const result=await api('/api/thanks',{method:'POST',body:JSON.stringify({userId:activeUserId,targetId})});await load();toast(result.award.points?`Thank-you sent · +1 Laurel · colleague received +5`:(result.message||'Thank-you recorded'))}catch(error){thanks.disabled=false;toast(error.message)}return}
   const confirmSkill=event.target.closest('[data-confirm-skill]');if(confirmSkill){const skillName=confirmSkill.dataset.confirmSkill;confirmSkill.disabled=true;try{const result=await api('/api/skills/confirm',{method:'POST',body:JSON.stringify({userId:activeUserId,skill:skillName})});await load();toast(result.award.points?`${skillName} confirmed · +1 Laurel`:`${skillName} is already on the profile`)}catch(error){confirmSkill.disabled=false;toast(error.message)}return}
   if(event.target.closest('#seek-choice')){showSeekState('consult');return}
-  if(event.target.closest('[data-seek-home]')){oracleMessages=[];$('#question').value='';$('#question').placeholder='e.g. I spend two days every month matching supplier invoices to contracts…';$('#seek-question-title').textContent='What do you seek?';showSeekState('home');return}
+  if(event.target.closest('[data-seek-home]')){oracleMessages=[];wisdomDraft=null;wisdomText='';$('#question').value='';$('#share-text').value='';$('#question').placeholder='e.g. I spend two days every month matching supplier invoices to contracts…';$('#seek-question-title').textContent='What do you seek?';showSeekState('home');return}
   if(event.target.closest('[data-seek-followup]')){$('#seek-question-title').textContent='What else would you like to know?';$('#question').placeholder='Ask a follow-up about this recommendation…';showSeekState('consult');return}
   if(event.target.closest('[data-change-request]')){const previous=[...oracleMessages].reverse().find(message=>message.role==='user')?.content||'';oracleMessages=[];$('#seek-question-title').textContent='What do you seek?';$('#question').value=previous;showSeekState('consult');return}
   const sample=event.target.closest('[data-seek-sample]');if(sample){$('#question').value=sample.dataset.seekSample;$('#question').focus();return}
-  if(event.target.closest('[data-action="share"]')){$('#share-dialog').showModal();return}
-  if(event.target.closest('#share-dialog .close')){$('#share-dialog').close();return}
+  if(event.target.closest('[data-action="share"]')){wisdomDraft=null;wisdomText='';$('#share-text').value='';showSeekState('share-consult');return}
+  const shareSample=event.target.closest('[data-share-sample]');if(shareSample){$('#share-text').value=shareSample.dataset.shareSample;$('#share-text').focus();return}
+  if(event.target.closest('[data-share-edit]')){$('#share-text').value=wisdomText;showSeekState('share-consult');return}
+  if(event.target.closest('[data-share-new]')){wisdomDraft=null;wisdomText='';$('#share-text').value='';showSeekState('share-consult');return}
   const runner=event.target.closest('[data-run]');if(runner){run(runner.dataset.run,runner.dataset.request);return}
   const feedback=event.target.closest('[data-feedback]');if(feedback){sendFeedback(feedback);return}
   const disc=event.target.closest('#disconnect-google');if(disc){try{await api('/api/google/disconnect',{method:'POST',body:'{}'});await loadGoogleStatus();toast('Google disconnected')}catch(error){toast(error.message)}return}
@@ -228,8 +254,31 @@ $('#seek-form').addEventListener('submit',async event=>{
   }catch(error){oracleMessages.push({role:'assistant',content:`I could not complete that request: ${error.message}`});renderOracleConversation();toast(error.message)}
   finally{button.disabled=false;button.innerHTML='Ask <span>→</span>'}
 });
-$('#share-form').addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const result=await api('/api/share',{method:'POST',body:JSON.stringify({title:form.get('title'),body:form.get('body'),userId:activeUserId})});$('#share-dialog').close();event.currentTarget.reset();await load();toast(result.award.points?`Your offering was saved · +${result.award.points} laurels`:`Your offering was saved · ${result.award.reason==='weekly_cap'?'weekly reward cap reached':'duplicate offering earned no laurels'}`)}catch(error){toast(error.message)}});
-$('#share-dialog .close').addEventListener('click',()=>$('#share-dialog').close());
+$('#share-analyze-form').addEventListener('submit',async event=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button[type="submit"]'),text=$('#share-text').value.trim();if(!text)return;
+  wisdomText=text;button.disabled=true;button.textContent='Reading…';renderWisdomReview(true);
+  try{
+    wisdomDraft=await api('/api/share/analyze',{method:'POST',body:JSON.stringify({text,userId:activeUserId})});
+    renderWisdomReview();
+    if(wisdomDraft.fallbackReason)toast(`LLM unavailable · using local extraction: ${wisdomDraft.fallbackReason}`);
+    else if(wisdomDraft.mode==='local')toast('Pythia is using local extraction. Add LLM settings for richer analysis.');
+  }catch(error){showSeekState('share-consult');toast(error.message)}
+  finally{button.disabled=false;button.innerHTML='Share <span>→</span>'}
+});
+document.addEventListener('submit',async event=>{
+  if(event.target.id!=='share-review-form')return;
+  event.preventDefault();const form=event.target,button=form.querySelector('button[type="submit"]');
+  const skills=[...form.querySelectorAll('.share-skill-row')].filter(row=>row.querySelector('.share-include').checked).map(row=>row.querySelector('[data-share-skill]').value.trim()).filter(Boolean);
+  const experience=[...form.querySelectorAll('[data-share-experience-title]')].filter(input=>input.closest('.share-review-item').querySelector('.share-include').checked).map(input=>({title:input.value.trim(),details:form.querySelector(`[data-share-experience-details="${input.dataset.shareExperienceTitle}"]`).value.trim()})).filter(item=>item.title);
+  const solutions=[...form.querySelectorAll('[data-share-solution-title]')].filter(input=>input.closest('.share-review-item').querySelector('.share-include').checked).map(input=>{const index=input.dataset.shareSolutionTitle,source=wisdomDraft.solutions[Number(index)]||{};return {title:input.value.trim(),kind:form.querySelector(`[data-share-solution-kind="${index}"]`).value,summary:form.querySelector(`[data-share-solution-summary="${index}"]`).value.trim(),runnable:source.runnable,minutesSaved:source.minutesSaved}}).filter(item=>item.title&&item.summary);
+  if(!skills.length&&!experience.length&&!solutions.length){toast('Select at least one thing to save.');return}
+  button.disabled=true;button.textContent='Saving…';
+  try{
+    const result=await api('/api/share',{method:'POST',body:JSON.stringify({text:wisdomText,userId:activeUserId,analysis:{headline:wisdomDraft.headline,summary:wisdomDraft.summary,skills,experience,solutions}})});
+    await load();renderWisdomReview(false,result);
+    toast(result.award.points?`Your offering was saved · +${result.award.points} laurels`:`Your offering was saved · ${result.award.reason==='weekly_cap'?'weekly reward cap reached':'duplicate offering earned no laurels'}`);
+  }catch(error){button.disabled=false;button.textContent='Save & share →';toast(error.message)}
+});
 document.querySelectorAll('[data-close-ask]').forEach(button=>button.addEventListener('click',()=>$('#ask-person-dialog').close()));
 $('#ask-person-form').addEventListener('submit',event=>{event.preventDefault();const name=$('#ask-person-dialog').dataset.personName;$('#ask-person-dialog').close();toast(`Message prepared for ${name}. Connect a messaging service to send it.`)});
 document.querySelectorAll('[data-close-profile]').forEach(button=>button.addEventListener('click',()=>$('#create-profile-dialog').close()));

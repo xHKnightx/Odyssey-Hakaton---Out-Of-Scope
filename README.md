@@ -28,6 +28,8 @@ Project documentation is collected in the [Documentation index](./Documentation/
 
 Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See the [Oracle LLM setup guide](./Documentation/Setup/ORACLE-LLM-SETUP.md).
 
+Share Wisdom uses the same configured chat model to extract skills, experience, and reusable solutions from a free-text contribution. The contributor reviews and edits the draft before confirmation; confirmed profile data and catalogue solutions are stored locally and indexed for Seek Wisdom. Shared catalogue agents are not executable until a runner integration is added.
+
 ## Signing in
 
 Every page and API call needs a session. The login page offers two ways in:

@@ -116,6 +116,25 @@ describe('authentication gate (dev login enabled)', () => {
     assert.equal(asked.user_id, persona.id);
   });
 
+  it('analyzes shared wisdom and saves confirmed skills and solutions for the signed-in person', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const analyzed = await client.request('/api/share/analyze', { method:'POST', json:{ text:'I built a Salesforce agent that finds duplicate customer accounts.' } });
+    assert.equal(analyzed.status,200);
+    assert.equal(analyzed.json().mode,'local');
+    assert.ok(analyzed.json().skills.includes('Salesforce'));
+    assert.equal(analyzed.json().solutions.length,1);
+
+    const saved = await client.request('/api/share', { method:'POST', json:{
+      text:'I built a Salesforce agent that finds duplicate customer accounts.',
+      analysis:{headline:'A reusable agent',summary:'Review it',skills:['Salesforce data quality'],experience:[],solutions:[{title:'HTTP Test Duplicate Finder',kind:'agent',summary:'Finds likely duplicate customer accounts.',runnable:true,minutesSaved:30}]}
+    }});
+    assert.equal(saved.status,200);
+    assert.deepEqual(saved.json().saved,{skills:1,experience:0,solutions:1});
+    const overview=(await client.request('/api/overview')).json();
+    assert.match(overview.people.find(person=>person.id===persona.id).skills,/Salesforce data quality/);
+    assert.equal(overview.solutions.find(solution=>solution.title==='HTTP Test Duplicate Finder').owner,'Mia Novak');
+  });
+
   it('ends the session on logout', async () => {
     const { client } = await signInAs(app, 'Mia Novak');
     assert.equal((await client.request('/api/auth/me')).status, 200);

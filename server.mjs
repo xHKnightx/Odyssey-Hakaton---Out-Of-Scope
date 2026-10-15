@@ -13,6 +13,7 @@ import { currentUser } from './lib/auth/context.mjs';
 import { saveOwnProfile } from './lib/auth/profile.mjs';
 import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
+import { analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -167,6 +168,16 @@ async function route(req, res) {
       const recommendedPeople=(result.recommendation.peopleIds||[]).map(id=>people.find(item=>item.id===id)).filter(Boolean);
       return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
     }
+    if (req.method === 'POST' && url.pathname === '/api/share/analyze') {
+      const b=await body(req),userId=resolveUserId(b.userId),text=String(b.text||'').trim();
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      if(!text)return json(res,400,{error:'Describe what you know or what you built first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep the contribution under 4,000 characters.'});
+      const user=one('SELECT id,title,team,skills FROM users WHERE id=?',userId);
+      const catalogue=all('SELECT title,kind,summary FROM solutions ORDER BY id');
+      try{return json(res,200,await analyzeWisdom({text,user,catalogue}));}
+      catch(error){return json(res,422,{error:error.message});}
+    }
     if (req.method === 'GET' && url.pathname === '/api/google/status') {
       const token = await readGoogleToken();
       return json(res, 200, { configured:googleConfigured(), connected:Boolean(token), email:token?.email||'', name:token?.name||'', redirectUri:googleRedirectUri(), scopes:GOOGLE_SCOPES, grantedScopes:token?.scope||'' });
@@ -293,10 +304,39 @@ async function route(req, res) {
       return json(res,200,{ok:true,award});
     }
     if(req.method==='POST'&&url.pathname==='/api/share'){
-      const b=await body(req),userId=resolveUserId(b.userId),title=String(b.title||'').trim(),text=String(b.body||'').trim(); if(!userId)return json(res,400,{error:'A valid profile is required.'}); if(!title||!text)return json(res,400,{error:'Add a title and a short description.'});
-      const award=gamification.rewardOffering(userId,title,text);
-      const id=db.prepare('INSERT INTO contributions(user_id,title,body) VALUES(?,?,?)').run(userId,title,text).lastInsertRowid;
-      return json(res,200,{ok:true,id:Number(id),award});
+      const b=await body(req),userId=resolveUserId(b.userId),text=String(b.text||b.body||'').trim();
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      if(!text||text.length>4000)return json(res,400,{error:'Add a contribution under 4,000 characters.'});
+      let analysis;
+      try{analysis=validateWisdomAnalysis(b.analysis||b);}
+      catch(error){return json(res,400,{error:error.message});}
+      const user=one('SELECT * FROM users WHERE id=?',userId),existingSkills=String(user.skills||'').split(',').map(s=>s.trim()).filter(Boolean);
+      const skills=[...existingSkills];
+      for(const skill of analysis.skills)if(!skills.some(item=>item.toLowerCase()===skill.toLowerCase())&&skills.length<20)skills.push(skill);
+      const experienceItems=analysis.experience.map(item=>item.details?`${item.title}: ${item.details}`:item.title);
+      const existingExperience=String(user.experience||'').trim(),newExperience=experienceItems.filter(item=>!existingExperience.toLowerCase().includes(item.toLowerCase()));
+      const experience=[existingExperience,...newExperience].filter(Boolean).join('\n').slice(0,1200);
+      const title=analysis.solutions[0]?.title||analysis.skills[0]||analysis.experience[0]?.title||'Shared wisdom';
+      const insertedSolutions=[],duplicates=[];let contributionId,award;
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        award=gamification.rewardOffering(userId,title,text);
+        contributionId=Number(db.prepare('INSERT INTO contributions(user_id,title,body) VALUES(?,?,?)').run(userId,title,text).lastInsertRowid);
+        db.prepare('UPDATE users SET skills=?,experience=? WHERE id=?').run(skills.join(', '),experience,userId);
+        const insertSolution=db.prepare('INSERT INTO solutions(title,kind,summary,owner_id,minutes_saved,runnable) VALUES(?,?,?,?,?,?)');
+        for(const solution of analysis.solutions){
+          const existing=one('SELECT id,title FROM solutions WHERE lower(title)=lower(?)',solution.title);
+          if(existing){duplicates.push(existing);continue;}
+          // A catalogue record is discoverable immediately, but it is not
+          // executable until a real runner/integration is registered for it.
+          const result=insertSolution.run(solution.title,solution.kind,solution.summary,userId,solution.minutesSaved,0);
+          insertedSolutions.push({...solution,runnable:false,id:Number(result.lastInsertRowid)});
+        }
+        db.exec('COMMIT');
+      }catch(error){db.exec('ROLLBACK');throw error;}
+      const searchIndex={person:await retrieval.indexPerson(userId).catch(error=>({indexed:0,mode:'exact',error:error.message})),solutions:[]};
+      for(const solution of insertedSolutions)searchIndex.solutions.push(await retrieval.indexSolution(solution.id).catch(error=>({indexed:0,mode:'exact',error:error.message})));
+      return json(res,200,{ok:true,id:contributionId,award,saved:{skills:skills.length-existingSkills.length,experience:newExperience.length,solutions:insertedSolutions.length},skills,experience,solutions:insertedSolutions,duplicates,searchIndex});
     }
     console.warn(`Unmatched API route: ${req.method} ${url.pathname}`);
     return json(res,404,{error:'API route not found.',method:req.method,path:url.pathname});
