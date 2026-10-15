@@ -86,7 +86,7 @@ async function loadOracleStatus(){
   try{
     oracleState=await api('/api/oracle/status');
     const hint=$('#seek-form .hint');
-    if(hint)hint.textContent=oracleState.configured?`Live LLM · ${oracleState.provider} · ${oracleState.model} · ${oracleState.retrieval?.mode||'exact'} search`:'Local matching · add LLM settings in .env.local for live chat';
+    if(hint)hint.textContent=oracleState.configured?'Oracle connected · Powered by SecondStack':'Oracle is using local search';
   }catch(error){oracleState={configured:false};}
 }
 
