@@ -64,9 +64,6 @@
     set('skills', own('skills'));
     set('experience', user.experience);
     $('#create-profile-dialog h2').textContent = me.profileComplete ? 'Your profile' : 'Welcome to PYTHIA';
-    $('#create-profile-dialog .profile-form-intro').textContent = me.profileComplete
-      ? 'Keep your role and areas of expertise current so colleagues can find you.'
-      : 'Tell colleagues what you do and what you know. You can change this at any time.';
   }
 
   async function boot() {
