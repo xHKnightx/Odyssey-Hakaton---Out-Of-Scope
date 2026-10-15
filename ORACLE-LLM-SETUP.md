@@ -12,6 +12,7 @@ LLM_API_KEY=replace-with-a-local-secret
 LLM_MODEL=replace-with-a-chat-model
 LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
+EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 `LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env.local`. When both files exist, `.env.local` overrides `.env`.
@@ -23,6 +24,14 @@ npm start
 ```
 
 The Seek Wisdom composer displays `Live LLM` and the configured model when the connection is enabled. If a gateway call times out, fails, or returns malformed structured output, Oracle automatically uses local catalogue matching and shows that it fell back.
+
+## Hybrid retrieval
+
+PYTHIA stores employee and solution embeddings in local SQLite. Employee embedding documents contain only role, team, skills, and professional experience; names, location, availability, and contact details are excluded. The default embedding model is SecondStack `text-embedding-3-small` (1,536 dimensions).
+
+On startup, FTS5 records are refreshed and only records whose content hash changed are re-embedded. A profile is also re-indexed immediately after creation, a skill confirmation, or a `PATCH /api/people/:id` update. Seek Wisdom embeds the user's latest message, combines cosine similarity with local FTS5 exact matching, and sends at most five solutions and five anonymized colleague candidates to the chat model. Names are resolved locally only after the model returns validated IDs.
+
+Changing `EMBEDDING_MODEL` creates a separate embedding set and causes all records to be embedded with the new model on the next start.
 
 ## How recommendations work
 
