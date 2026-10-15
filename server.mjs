@@ -37,12 +37,14 @@ CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY, solution_id INTEGER REFE
 CREATE TABLE IF NOT EXISTS contributions(id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), title TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS wisdom_events(id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), kind TEXT NOT NULL, points INTEGER NOT NULL, note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS calendar_proposals(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES runs(id), start_at TEXT NOT NULL, end_at TEXT NOT NULL, timezone TEXT NOT NULL, title TEXT NOT NULL, reason TEXT, status TEXT DEFAULT 'proposed', external_event_id TEXT);
+CREATE TABLE IF NOT EXISTS calendar_preferences(user_id INTEGER PRIMARY KEY REFERENCES users(id), preferences TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS pantheon_seed(user_id INTEGER PRIMARY KEY REFERENCES users(id), title TEXT NOT NULL, shared INTEGER NOT NULL, helped INTEGER NOT NULL, hours INTEGER NOT NULL, deed TEXT, rank INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS gratitude_seed(id INTEGER PRIMARY KEY, from_user_id INTEGER REFERENCES users(id), to_user_id INTEGER REFERENCES users(id), note TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
 const calendarProposalColumns=new Set(db.prepare('PRAGMA table_info(calendar_proposals)').all().map(c=>c.name));
 if(!calendarProposalColumns.has('recurrence_rule'))db.exec('ALTER TABLE calendar_proposals ADD COLUMN recurrence_rule TEXT');
 if(!calendarProposalColumns.has('created_at'))db.exec('ALTER TABLE calendar_proposals ADD COLUMN created_at TEXT');
+if(!calendarProposalColumns.has('activity'))db.exec('ALTER TABLE calendar_proposals ADD COLUMN activity TEXT');
 const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
 for (const [name,type] of [['initials','TEXT'],['color','TEXT'],['location','TEXT'],['availability','TEXT'],['experience','TEXT']]) if (!userColumns.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
 const wisdomColumns = new Set(db.prepare('PRAGMA table_info(wisdom_events)').all().map(c => c.name));
@@ -238,6 +240,10 @@ async function route(req, res) {
         return json(res,200,await analyzeCalendar({days,lookback,timeZone:String(b.timeZone||'UTC')}));
       } catch(error) { return json(res,502,{error:error.message}); }
     }
+    if(req.method==='GET'&&url.pathname==='/api/calendar/preferences'){
+      const userId=currentUser()?.id,stored=one('SELECT preferences,updated_at FROM calendar_preferences WHERE user_id=?',userId);
+      return json(res,200,{preferences:stored?JSON.parse(stored.preferences):null,updatedAt:stored?.updated_at||null});
+    }
     if(req.method==='POST'&&url.pathname==='/api/calendar/plan-preview'){
       const b=await body(req),user=currentUser();
       if(!user)return json(res,401,{error:'Sign in required.'});
@@ -250,15 +256,51 @@ async function route(req, res) {
       try{
         const analysis=await analyzeCalendar({days:7,lookback:0,timeZone:String(b.timeZone||'UTC'),includeGmail:false,breakPreferences:preferences});
         const advice=await adviseCalendarBreaks({messages,preferences:{...preferences,freeText:messages.filter(m=>m.role==='user').at(-1)?.content||''},slots:analysis.proposals});
-        const ordered=[...advice.recommendedSlotKeys.map(key=>analysis.proposals.find(slot=>slot.key===key)).filter(Boolean),...analysis.proposals.filter(slot=>!advice.recommendedSlotKeys.includes(slot.key))].slice(0,10);
+        const ordered=[...advice.recommendedSlotKeys.map(key=>analysis.proposals.find(slot=>slot.key===key)).filter(Boolean),...analysis.proposals.filter(slot=>!advice.recommendedSlotKeys.includes(slot.key))].slice(0,preferences.invitationsPerWeek);
         const solution=one("SELECT id FROM solutions WHERE title='Calendar Breather' ORDER BY id LIMIT 1");
         if(!solution)return json(res,500,{error:'Calendar Breather is not available in the solution catalogue.'});
         const summary=JSON.stringify({source:analysis.source,meetingCount:analysis.meetingCount,emailCount:0,proposalCount:ordered.length,plannerMode:advice.mode});
         const runId=Number(db.prepare('INSERT INTO runs(solution_id,user_id,result) VALUES(?,?,?)').run(solution.id,user.id,summary).lastInsertRowid);
+        db.prepare(`INSERT INTO calendar_preferences(user_id,preferences,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
+          ON CONFLICT(user_id) DO UPDATE SET preferences=excluded.preferences,updated_at=CURRENT_TIMESTAMP`).run(user.id,JSON.stringify(preferences));
         const insert=db.prepare('INSERT INTO calendar_proposals(run_id,start_at,end_at,timezone,title,reason) VALUES(?,?,?,?,?,?)');
-        const proposals=ordered.map(slot=>{const id=Number(insert.run(runId,slot.start,slot.end,slot.timeZone,slot.title,slot.reason).lastInsertRowid);return {...slot,id,recommended:advice.recommendedSlotKeys.includes(slot.key)}});
+        const proposals=[];
+        for(const slot of ordered){
+          const id=Number(insert.run(runId,slot.start,slot.end,slot.timeZone,slot.title,slot.reason).lastInsertRowid);
+          db.prepare('UPDATE calendar_proposals SET activity=? WHERE id=?').run(slot.activity,id);
+          const event={summary:slot.title,description:`${slot.reason}\n\nA tentative PYTHIA recovery break. Accept or decline it in PYTHIA.`,start:{dateTime:slot.start,timeZone:slot.timeZone},end:{dateTime:slot.end,timeZone:slot.timeZone},status:'tentative',visibility:'private',transparency:'opaque',reminders:{useDefault:true}};
+          try{
+            const external=await googleApi('/calendar/v3/calendars/primary/events?sendUpdates=none',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(event)});
+            db.prepare("UPDATE calendar_proposals SET status='invited',external_event_id=? WHERE id=?").run(external.id,id);
+            proposals.push({...slot,id,invitationId:id,invitationStatus:'invited',recommended:advice.recommendedSlotKeys.includes(slot.key)});
+          }catch(error){
+            proposals.push({...slot,id,invitationId:id,invitationStatus:'failed',invitationError:error.message,recommended:advice.recommendedSlotKeys.includes(slot.key)});
+          }
+        }
         const award=gamification.rewardSolutionUse(solution.id,one('SELECT owner_id FROM solutions WHERE id=?',solution.id).owner_id,user.id,one('SELECT minutes_saved FROM solutions WHERE id=?',solution.id).minutes_saved,runId);
         return json(res,200,{runId,calendarName:analysis.calendarName,timeZone:analysis.timeZone,meetingCount:analysis.meetingCount,proposals,answer:advice.answer,planner:{mode:advice.mode,model:advice.model,fallbackReason:advice.fallbackReason||''},award,preferences});
+      }catch(error){return json(res,502,{error:error.message})}
+    }
+    if(req.method==='GET'&&url.pathname==='/api/calendar/pending'){
+      const userId=currentUser()?.id;
+      return json(res,200,{invitations:all(`SELECT p.id,p.start_at,p.end_at,p.timezone,p.title,p.reason,p.activity,p.external_event_id
+        FROM calendar_proposals p JOIN runs r ON r.id=p.run_id WHERE r.user_id=? AND p.status='invited' ORDER BY p.start_at`,userId)});
+    }
+    if(req.method==='POST'&&url.pathname.startsWith('/api/calendar/invitations/')&&url.pathname.endsWith('/respond')){
+      const userId=currentUser()?.id,b=await body(req),id=Number(url.pathname.split('/').at(-2)),action=String(b.action||'');
+      if(!['accept','decline'].includes(action))return json(res,400,{error:'Choose accept or decline.'});
+      const invitation=one(`SELECT p.* FROM calendar_proposals p JOIN runs r ON r.id=p.run_id
+        WHERE p.id=? AND r.user_id=? AND p.status='invited'`,id,userId);
+      if(!invitation)return json(res,404,{error:'That invitation is no longer pending.'});
+      try{
+        if(action==='accept'){
+          await googleApi(`/calendar/v3/calendars/primary/events/${encodeURIComponent(invitation.external_event_id)}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'confirmed'})});
+          db.prepare("UPDATE calendar_proposals SET status='accepted' WHERE id=?").run(id);
+        }else{
+          await googleApi(`/calendar/v3/calendars/primary/events/${encodeURIComponent(invitation.external_event_id)}`,{method:'DELETE'});
+          db.prepare("UPDATE calendar_proposals SET status='declined' WHERE id=?").run(id);
+        }
+        return json(res,200,{ok:true,action,id});
       }catch(error){return json(res,502,{error:error.message})}
     }
     if(req.method==='GET'&&url.pathname==='/api/calendar/recurring'){
@@ -287,7 +329,8 @@ async function route(req, res) {
         const horizon=await analyzeCalendar({days:Math.min(90,Math.max(7,occurrences*7+7)),lookback:0,timeZone:first.timezone,includeGmail:false});
         const selected=ids.map(id=>one('SELECT * FROM calendar_proposals WHERE id=? AND run_id=?',id,runId));
         if(selected.some(p=>!p))return json(res,404,{error:'A selected proposal was not found for this run.'});
-        const pending=selected.filter(p=>p.status!=='created'),planned=[];
+        if(selected.some(p=>!['proposed','created'].includes(p.status)))return json(res,409,{error:'This break already has a pending response or was declined.'});
+        const pending=selected.filter(p=>p.status==='proposed'),planned=[];
         for(const p of pending){
           if(hasCalendarConflict([...horizon.busyIntervals,...planned],{start:p.start_at,end:p.end_at,timeZone:p.timezone,occurrences}))return json(res,409,{error:`${p.title} at ${p.start_at} conflicts with a calendar event during the selected schedule. Refresh the plan and choose another time.`});
           const recurrenceRule=occurrences>1?`RRULE:FREQ=WEEKLY;COUNT=${occurrences}`:null;

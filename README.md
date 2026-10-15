@@ -20,7 +20,7 @@ npm run db:reset
 
 The command archives the previous SQLite files under `data/backups/`, then creates a fresh database from the current versioned seed. Start the application normally afterward.
 
-The MVP includes Oracle search/chat, preference-based Calendar Breather planning with one-time or weekly Google Calendar scheduling, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. Oracle planning uses the configured OpenAI-compatible gateway with a local fallback. Calendar recovery planning requires the signed-in user's connected Google Calendar and does not use Gmail.
+The MVP includes Oracle search/chat, preference-based Calendar Breather planning with automatic tentative calendar holds and Accept/Decline responses, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. Oracle planning uses the configured OpenAI-compatible gateway with a local fallback. Calendar recovery planning requires the signed-in user's connected Google Calendar and does not use Gmail.
 
 Project documentation is collected in the [Documentation index](./Documentation/README.md). The implemented system design and search/data flow are documented in [the current architecture](./Documentation/Architecture/ARCHITECTURE.md); the [target architecture](./Documentation/Architecture/PYTHIA-architecture-and-logic.md) describes broader planned components.
 

@@ -87,7 +87,16 @@ async function loadCalendarPlans(){
   try{
     const {plans}=await api('/api/calendar/recurring');
     container.innerHTML=plans.length?plans.map(plan=>`<article class="calendar-plan-row"><div class="grow"><b>${esc(new Date(plan.start_at).toLocaleString([], {weekday:'long',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:plan.timezone}))} · ${esc(plan.timezone)}</b><small>${esc(plan.recurrence_rule.replace('RRULE:','').replaceAll(';',' · ').replace('FREQ=WEEKLY','Weekly'))}</small></div><button class="btn ghost" data-cancel-calendar-plan="${plan.id}">Cancel series</button></article>`).join(''):'<p class="empty-state">No recurring breaks scheduled yet.</p>';
+    const pending=$('#calendar-pending');
+    if(pending){const {invitations}=await api('/api/calendar/pending');pending.innerHTML=invitations.length?invitations.map(invitation=>calendarInvitationCard(invitation)).join(''):'<p class="empty-state">No break invitations waiting. Your calendar can unclench.</p>'}
   }catch(error){container.innerHTML=`<p class="empty-state">${esc(error.message)}</p>`}
+}
+
+function calendarInvitationCard(invitation,timezone=invitation.timezone){
+  const time=new Date(invitation.start_at||invitation.start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:timezone});
+  const id=invitation.invitationId||invitation.id;
+  if(invitation.invitationStatus==='failed')return `<article class="calendar-plan-row"><div class="grow"><b>${esc(invitation.title)} · ${esc(time)}</b><small>Could not add this tentative hold: ${esc(invitation.invitationError||'Google Calendar error')}</small></div></article>`;
+  return `<article class="calendar-plan-row invitation-card"><div class="grow"><b>${esc(invitation.title)} · ${esc(time)}</b><small>${esc(invitation.reason||'A tiny pause, picked for you.')}</small></div><div class="invitation-actions"><button class="btn primary" data-calendar-response="accept" data-invitation-id="${id}">Accept</button><button class="btn ghost" data-calendar-response="decline" data-invitation-id="${id}">Decline</button></div></article>`;
 }
 
 async function loadOracleStatus(){
@@ -144,6 +153,10 @@ async function run(id,requestId){
   pendingCalendarRun={solutionId:Number(id),requestId:Number(requestId)||null};
   calendarPlanMessages=[];
   $('#calendar-plan-note').value='';
+  try{
+    const {preferences}=await api('/api/calendar/preferences');
+    if(preferences){const form=$('#calendar-plan-form');for(const name of ['durationMinutes','activity','invitationsPerWeek','windowStart','windowEnd'])if(preferences[name]!=null&&form.elements[name])form.elements[name].value=preferences[name];form.querySelectorAll('[name="weekday"]').forEach(input=>input.checked=preferences.weekdays.includes(Number(input.value)))}
+  }catch{}
   $('#calendar-plan-dialog').showModal();
 }
 
@@ -151,10 +164,9 @@ function renderCalendarPlan(result){
   currentRun=result.runId;
   const timezone=result.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone;
   const proposals=result.proposals||[];
-  const proposalHtml=proposals.length?proposals.map((p,index)=>`<label class="proposal"><input type="checkbox" value="${p.id}"><span><b>${esc(new Date(p.start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:timezone}))} · ${p.durationMinutes} min ${p.recommended?'· ORACLE PICK':''}</b><small>${esc(p.reason)}</small></span></label>`).join(''):'<p class="empty-state">No free slots matched these preferences. Change the days or hours and ask PYTHIA to look again.</p>';
-  const schedulePanel=proposals.length?`<div class="calendar-write"><div class="eyebrow">REVIEW BEFORE WRITING</div><p>Only selected breaks are written. Event titles and descriptions stay private and generic.</p><label class="invite-label">Schedule<select id="calendar-repeat"><option value="1">Once</option><option value="2">Weekly · 2 occurrences</option><option value="4">Weekly · 4 occurrences</option><option value="8">Weekly · 8 occurrences</option><option value="12">Weekly · 12 occurrences</option></select><small>Weekly series are checked against your calendar before creation. Later changes to your calendar may still create conflicts.</small></label><button class="btn primary" id="add-selected-breaks">Schedule selected breaks</button></div>`:'';
-  $('#run-title').textContent='Your recovery break options';
-  $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">LIVE GOOGLE CALENDAR · ${esc(timezone)} · ${result.planner.mode==='llm'?`SECONDSTACK ${esc(result.planner.model)}`:'LOCAL PLANNER FALLBACK'}</div><h2>${result.meetingCount} events checked</h2><div class="oracle-plan-answer">${esc(result.answer)}${result.planner.fallbackReason?`<small>Oracle fallback: ${esc(result.planner.fallbackReason)}</small>`:''}</div><div class="eyebrow meeting-heading">AVAILABLE TIMES · SELECT WHAT YOU WANT</div><div class="proposal-list">${proposalHtml}</div>${schedulePanel}<button class="btn ghost" id="refine-calendar-plan">Refine my preferences with PYTHIA</button><p class="analysis-disclaimer">Only busy intervals and your note are used for this plan. Event titles, attendees, descriptions, and Gmail are not sent to the LLM. Nothing is added until you confirm.</p></div>`;
+  const proposalHtml=proposals.length?proposals.map(p=>calendarInvitationCard({...p,start_at:p.start,invitationId:p.id},timezone)).join(''):'<p class="empty-state">No suitable times showed up this week. Apparently even calendars need boundaries.</p>';
+  $('#run-title').textContent='A few little resets';
+  $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">YOUR CALENDAR · ${esc(timezone)} · ${result.planner.mode==='llm'?`SECONDSTACK ${esc(result.planner.model)}`:'LOCAL PLANNER'}</div><h2>${result.meetingCount} events checked</h2><div class="oracle-plan-answer">${esc(result.answer)}${result.planner.fallbackReason?`<small>Oracle fallback: ${esc(result.planner.fallbackReason)}</small>`:''}</div><div class="eyebrow meeting-heading">TENTATIVE HOLDS · ACCEPT OR DECLINE</div><div class="proposal-list">${proposalHtml}</div><button class="btn ghost" id="refine-calendar-plan">Adjust my reset settings</button><p class="analysis-disclaimer">These holds were added automatically as tentative private calendar events. Accept or decline here. Event titles, attendees, descriptions, and Gmail are not sent to the LLM.</p></div>`;
   view('sanctum');
 }
 
@@ -165,13 +177,13 @@ async function planCalendar(event){
   const weekdays=values.getAll('weekday').map(Number);
   if(!weekdays.length){toast('Choose at least one weekday');return}
   calendarPlanMessages.push({role:'user',content:note});
-  button.disabled=true;button.textContent='Checking your calendar…';
+  button.disabled=true;button.textContent='Finding a little breathing room…';
   try{
-    const result=await api('/api/calendar/plan-preview',{method:'POST',body:JSON.stringify({messages:calendarPlanMessages,preferences:{durationMinutes:Number(values.get('durationMinutes')),maxPerDay:Number(values.get('maxPerDay')),windowStart:values.get('windowStart'),windowEnd:values.get('windowEnd'),weekdays},timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+    const result=await api('/api/calendar/plan-preview',{method:'POST',body:JSON.stringify({messages:calendarPlanMessages,preferences:{durationMinutes:Number(values.get('durationMinutes')),activity:values.get('activity'),invitationsPerWeek:Number(values.get('invitationsPerWeek')),maxPerDay:1,windowStart:values.get('windowStart'),windowEnd:values.get('windowEnd'),weekdays},timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
     calendarPlanMessages.push({role:'assistant',content:result.answer});
     renderCalendarPlan(result);$('#calendar-plan-dialog').close();await loadCalendarPlans();
   }catch(error){calendarPlanMessages.pop();toast(error.message)}
-  finally{button.disabled=false;button.textContent='Find break times'}
+  finally{button.disabled=false;button.textContent='Set up my reset invitations'}
 }
 
 async function sendFeedback(button){if(!currentRun)return;try{await api(`/api/runs/${currentRun}/feedback`,{method:'POST',body:JSON.stringify({feedback:button.dataset.feedback,thanks:$('#thanks-note').value})});document.querySelectorAll('[data-feedback]').forEach(x=>x.disabled=true);toast(button.dataset.feedback==='helped'?'Feedback saved · author received laurels':'Feedback saved');await load()}catch(error){toast(error.message)}}
@@ -195,6 +207,7 @@ document.addEventListener('click',async event=>{
   const feedback=event.target.closest('[data-feedback]');if(feedback){sendFeedback(feedback);return}
   const disc=event.target.closest('#disconnect-google');if(disc){try{await api('/api/google/disconnect',{method:'POST',body:'{}'});await loadGoogleStatus();toast('Google disconnected')}catch(error){toast(error.message)}return}
   const cancelPlan=event.target.closest('[data-cancel-calendar-plan]');if(cancelPlan){cancelPlan.disabled=true;try{await api(`/api/calendar/recurring/${cancelPlan.dataset.cancelCalendarPlan}`,{method:'DELETE'});await loadCalendarPlans();toast('Recurring break series canceled')}catch(error){cancelPlan.disabled=false;toast(error.message)}return}
+  const invitationAction=event.target.closest('[data-calendar-response]');if(invitationAction){invitationAction.disabled=true;try{await api(`/api/calendar/invitations/${invitationAction.dataset.invitationId}/respond`,{method:'POST',body:JSON.stringify({action:invitationAction.dataset.calendarResponse})});invitationAction.closest('.calendar-plan-row')?.remove();await loadCalendarPlans();toast(invitationAction.dataset.calendarResponse==='accept'?'Accepted · your calendar has the final word':'Declined · politely escaped the calendar');return}catch(error){invitationAction.disabled=false;toast(error.message);return}}
   if(event.target.closest('#refresh-calendar-plans')){await loadCalendarPlans();return}
   const add=event.target.closest('#add-selected-breaks');if(add){
     const proposalIds=[...document.querySelectorAll('.proposal input:checked:not(:disabled)')].map(i=>Number(i.value)).filter(Number.isFinite);

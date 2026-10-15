@@ -32,8 +32,8 @@ The same OAuth client and the same redirect URI (`http://localhost:3000/auth/goo
 ## Planning and scheduling recovery breaks
 
 1. Open Calendar Breather from Oracle. Sign in and connect the same Google account under Connections.
-2. Select **Run it on my week**, describe what you want, then choose break length, working hours, weekdays, and daily suggestion limit.
+2. Select **Run it on my week**, describe what you want, then choose a 5, 10, or 15-minute break, activity style, working hours, weekdays, and how many holds to receive this week.
 3. PYTHIA reads the primary calendar for the next seven days, including all-day events. Event titles, attendees, descriptions, and Gmail are not sent to the SecondStack model. The model may rank only the free slots calculated locally; if unavailable, the local planner still returns slots.
-4. Review and select slots, then choose one-time or weekly recurrence (up to 12 occurrences). The app checks conflicts again before creating generic, private recovery events. It does not invite attendees. Recurring series can be canceled from Connections.
+4. PYTHIA automatically adds up to five tentative private holds to your calendar. Open the invitation list in Connections and accept or decline each hold; accepting confirms it, declining removes it.
 
 The planning flow requires a connected Google Calendar and does not substitute seeded demo events. Nothing is written until you press **Schedule selected breaks**. Weekly series are fixed recurrence rules; later calendar changes can introduce conflicts, so review the calendar after scheduling.
