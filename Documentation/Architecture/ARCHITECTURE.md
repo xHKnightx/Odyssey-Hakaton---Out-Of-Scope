@@ -132,4 +132,3 @@ See the [Oracle LLM setup guide](../Setup/ORACLE-LLM-SETUP.md) and [Google setup
 - Search compares vectors in application memory. This is appropriate for the current small dataset; a larger deployment should move vector search to `sqlite-vec` or Postgres with pgvector.
 - Profiles have no field-level access-control model yet. Permission filtering must be applied before retrieval in a multi-tenant deployment.
 - The MCP endpoint and SecondStack/ControlTower catalogue synchronization described in the target architecture are still planned work.
-

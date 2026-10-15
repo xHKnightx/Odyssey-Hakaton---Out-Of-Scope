@@ -48,4 +48,3 @@ The model can return only database IDs included in its context. The server valid
 - `GET /api/oracle/status` reports whether a live model is configured.
 - `POST /api/oracle/chat` accepts `{ userId, messages }`, where messages use `{ role, content }`.
 - The last 12 messages are sent to the model, with a maximum of 4,000 characters per message.
-
