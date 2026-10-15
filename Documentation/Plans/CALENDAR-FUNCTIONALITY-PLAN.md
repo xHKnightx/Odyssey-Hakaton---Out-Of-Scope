@@ -4,7 +4,7 @@
 
 Let a signed-in colleague describe what helps them recover during a demanding workday, get calendar-aware break suggestions through the existing PYTHIA Oracle/SecondStack LLM flow, and review and schedule those breaks in their own Google Calendar. Support both a one-time plan and recurring calendar breaks. Treat recurring automatic calendar checks as a distinct capability, because they need a reliable scheduler and clear rules for when PYTHIA may write events without a person reviewing each run.
 
-## Current implementation audit
+## Baseline before this feature
 
 - Google sign-in and server sessions identify the current user. Google Calendar/Gmail OAuth tokens are stored per user, and Google connection is separate from sign-in.
 - `lib/calendar.mjs` reads the primary calendar for a fixed five-day window, fetches recent Gmail snippets for meeting participants, computes strain locally, and proposes a fixed 20-minute break in an available weekday gap.
@@ -78,6 +78,18 @@ Let a signed-in colleague describe what helps them recover during a demanding wo
 - If automatic scheduled analysis is included, it runs only under the documented process-liveness guarantees and does not write to Google without explicit bounded opt-in.
 - Automated tests pass, setup and architecture docs are updated, and a signed-in local walkthrough verifies one-time and recurring event creation/cancellation against a test calendar.
 
-## Scope decision to confirm before implementation
+## Scope boundary
 
-“Schedule regular jobs” may mean recurring Google Calendar break events, automatic periodic PYTHIA analysis/proposals, or both. The phases above separate these capabilities. Recommended first implementation: Phase 1 plus recurring calendar events in Phase 2; implement periodic automatic analysis only if that is specifically wanted, because it has additional scheduler reliability and unattended-write decisions.
+Recurring Google Calendar break events are implemented in this change. Automatic periodic PYTHIA analysis/proposals remain separate and are not included; they need a scheduler reliability design and clear rules for unattended actions.
+
+## Implementation log — 2026-10-16
+
+Implemented in the `alexkorn/calendar-functionality` branch:
+
+- Calendar Breather now opens a preference form for free-text intent, break duration, weekdays, work hours, and suggestions per day.
+- `POST /api/calendar/plan-preview` is session-owned, requires the linked Google account, checks the next seven days of timed and all-day events, and stores generated proposals for the signed-in user.
+- The SecondStack calendar operation uses existing Oracle gateway configuration and may rank only locally generated candidate keys. Calendar titles, descriptions, attendees, and Gmail are excluded. A local deterministic planner remains available when the model is unavailable.
+- Users select one-time or fixed weekly recurrence (2, 4, 8, or 12 occurrences). The write endpoint checks owner, current availability, and conflicts before creating generic events without invitees. Recurring series can be listed and canceled by their owner.
+- Focused tests cover preference validation, timezone-aware slot generation, all-day events, and weekly recurrence conflicts across a daylight-saving transition.
+
+Not included: unattended periodic analysis/jobs, automatic event writes, editing/pausing a recurring series, persistence of structured user preferences, and live Google/SecondStack verification. Weekly recurrence is a fixed Google rule and later calendar edits can introduce conflicts. Verify creation and cancellation using a test Google calendar before presenting live integration behavior as confirmed.

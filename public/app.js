@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-let data=null, googleState=null, oracleState=null, currentRun=null, activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
+let data=null, googleState=null, oracleState=null, currentRun=null, pendingCalendarRun=null, calendarPlanMessages=[], activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
 let oracleMessages=[];
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path, options={}) {
@@ -12,7 +12,7 @@ async function api(path, options={}) {
   return payload;
 }
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3400)}
-function view(id){document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='connections')loadGoogleStatus()}
+function view(id){document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='connections'){loadGoogleStatus();loadCalendarPlans()}}
 function avatar(person,size=''){return `<span class="av ${size}" style="background:${esc(person.color||'#d4a855')}" title="${esc(person.name)}">${esc(person.initials||person.name.split(' ').map(n=>n[0]).join('').slice(0,2))}</span>`}
 function iconLaurel(){let leaves='';for(let i=0;i<9;i++){const d=255-i*15,a=d*Math.PI/180,r=i%2?52:46,x=60+r*Math.cos(a),y=60-r*Math.sin(a),rot=-d+90+(i%2?-28:28);leaves+=`<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="8.5" ry="3.4" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})"/>`}return `<svg class="laurel-svg" viewBox="0 0 120 120" fill="currentColor"><g>${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g><g transform="translate(120 0) scale(-1 1)">${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g></svg>`}
 
@@ -82,6 +82,14 @@ async function loadGoogleStatus(){
   }catch(error){status.textContent=error.message;}
 }
 
+async function loadCalendarPlans(){
+  const container=$('#calendar-plans');if(!container)return;
+  try{
+    const {plans}=await api('/api/calendar/recurring');
+    container.innerHTML=plans.length?plans.map(plan=>`<article class="calendar-plan-row"><div class="grow"><b>${esc(new Date(plan.start_at).toLocaleString([], {weekday:'long',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:plan.timezone}))} · ${esc(plan.timezone)}</b><small>${esc(plan.recurrence_rule.replace('RRULE:','').replaceAll(';',' · ').replace('FREQ=WEEKLY','Weekly'))}</small></div><button class="btn ghost" data-cancel-calendar-plan="${plan.id}">Cancel series</button></article>`).join(''):'<p class="empty-state">No recurring breaks scheduled yet.</p>';
+  }catch(error){container.innerHTML=`<p class="empty-state">${esc(error.message)}</p>`}
+}
+
 async function loadOracleStatus(){
   try{
     oracleState=await api('/api/oracle/status');
@@ -133,17 +141,37 @@ function askPerson(id){
 async function connectStatusFromQuery(){const params=new URLSearchParams(location.search);if(params.get('google')==='connected')toast('Google account connected');if(params.has('google_error'))toast(`Google connection failed: ${params.get('google_error')}`);if(params.has('connect'))toast('Add Google OAuth credentials to .env, then restart the server');if(params.size){history.replaceState({},'',location.pathname+location.hash)}}
 
 async function run(id,requestId){
+  pendingCalendarRun={solutionId:Number(id),requestId:Number(requestId)||null};
+  calendarPlanMessages=[];
+  $('#calendar-plan-note').value='';
+  $('#calendar-plan-dialog').showModal();
+}
+
+function renderCalendarPlan(result){
+  currentRun=result.runId;
+  const timezone=result.timeZone||Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const proposals=result.proposals||[];
+  const proposalHtml=proposals.length?proposals.map((p,index)=>`<label class="proposal"><input type="checkbox" value="${p.id}"><span><b>${esc(new Date(p.start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:timezone}))} · ${p.durationMinutes} min ${p.recommended?'· ORACLE PICK':''}</b><small>${esc(p.reason)}</small></span></label>`).join(''):'<p class="empty-state">No free slots matched these preferences. Change the days or hours and ask PYTHIA to look again.</p>';
+  const schedulePanel=proposals.length?`<div class="calendar-write"><div class="eyebrow">REVIEW BEFORE WRITING</div><p>Only selected breaks are written. Event titles and descriptions stay private and generic.</p><label class="invite-label">Schedule<select id="calendar-repeat"><option value="1">Once</option><option value="2">Weekly · 2 occurrences</option><option value="4">Weekly · 4 occurrences</option><option value="8">Weekly · 8 occurrences</option><option value="12">Weekly · 12 occurrences</option></select><small>Weekly series are checked against your calendar before creation. Later changes to your calendar may still create conflicts.</small></label><button class="btn primary" id="add-selected-breaks">Schedule selected breaks</button></div>`:'';
+  $('#run-title').textContent='Your recovery break options';
+  $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">LIVE GOOGLE CALENDAR · ${esc(timezone)} · ${result.planner.mode==='llm'?`SECONDSTACK ${esc(result.planner.model)}`:'LOCAL PLANNER FALLBACK'}</div><h2>${result.meetingCount} events checked</h2><div class="oracle-plan-answer">${esc(result.answer)}${result.planner.fallbackReason?`<small>Oracle fallback: ${esc(result.planner.fallbackReason)}</small>`:''}</div><div class="eyebrow meeting-heading">AVAILABLE TIMES · SELECT WHAT YOU WANT</div><div class="proposal-list">${proposalHtml}</div>${schedulePanel}<button class="btn ghost" id="refine-calendar-plan">Refine my preferences with PYTHIA</button><p class="analysis-disclaimer">Only busy intervals and your note are used for this plan. Event titles, attendees, descriptions, and Gmail are not sent to the LLM. Nothing is added until you confirm.</p></div>`;
+  view('sanctum');
+}
+
+async function planCalendar(event){
+  event.preventDefault();
+  if(!pendingCalendarRun)return;
+  const form=event.currentTarget,button=form.querySelector('[type="submit"]'),values=new FormData(form),note=String(values.get('note')||'').trim();
+  const weekdays=values.getAll('weekday').map(Number);
+  if(!weekdays.length){toast('Choose at least one weekday');return}
+  calendarPlanMessages.push({role:'user',content:note});
+  button.disabled=true;button.textContent='Checking your calendar…';
   try{
-    toast('Calendar Breather is checking your week…');
-    const r=await api('/api/run',{method:'POST',body:JSON.stringify({solutionId:Number(id),requestId:Number(requestId)||null,userId:activeUserId,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
-    currentRun=r.id;const result=r.result;await load();
-    const eventCards=(result.events||[]).map(ev=>`<article class="meeting-card"><div class="meeting-top"><div><div class="meeting-time">${new Date(ev.start.dateTime).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:result.timeZone})} · ${ev.durationMinutes} min</div><h3>${esc(ev.title)}</h3></div><span class="strain strain-${ev.strain>=7?'high':ev.strain>=5?'mid':'low'}">Strain ${ev.strain}/10</span></div><div class="meeting-meta"><span class="tone tone-${ev.sentiment.toLowerCase()}">${esc(ev.sentiment)} tone</span><span>${ev.attendees?.length||0} attendees</span><span>${ev.emailCount||0} related emails</span></div><p class="meeting-reason">${esc(ev.reason)}</p>${ev.emailContext?.length?`<details class="email-context"><summary>Gmail context (${ev.emailContext.length})</summary>${ev.emailContext.map(m=>`<div class="email-snippet"><b>${esc(m.subject)}</b><small>${esc(m.from)} · ${esc(m.sentiment)} tone</small><p>${esc(m.snippet)}</p></div>`).join('')}</details>`:''}</article>`).join('');
-    const proposalHtml=result.proposals?.length?result.proposals.map(p=>`<label class="proposal"><input type="checkbox" value="${p.id||esc(p.key)}" ${r.live?'checked disabled':''}><span><b>${esc(p.label)}</b><small>${esc(p.reason)}</small></span></label>`).join(''):'<p class="empty-state">No open 20-minute gaps were found between your meetings.</p>';
-    const writePanel=r.live&&result.proposals?.length?`<div class="calendar-write"><div class="eyebrow">REVIEW BEFORE WRITING</div><p>Selected breaks will be added to your primary Google Calendar. They will be organized by your connected Google account.</p><label class="invite-label">Optional invitees <input id="invitees" placeholder="colleague@company.com, another@company.com"><small>Google sends invitations to these people when you confirm.</small></label><button class="btn primary" id="add-selected-breaks">Add selected breaks to my calendar</button></div>`:r.live?'':'<div class="demo-callout">This is seeded mockup data. Connect Google in Connections to analyze your calendar and Gmail. Demo suggestions are not written to any calendar.</div>';
-    $('#run-title').textContent=r.solution.title;
-    $('#run-result').innerHTML=`<div class="run-result"><div class="eyebrow">${r.live?'LIVE GOOGLE DATA':'SEEDED DEMO DATA'} · ${esc(result.timeZone||'')}${r.award?.points?` · +${r.award.points} LAURELS TO THE AUTHOR`:''}</div><h2>Your week, with room to breathe</h2><div class="analysis-stats"><div><b>${result.meetingCount}</b><small>meetings</small></div><div><b>${result.emailCount}</b><small>email snippets</small></div><div><b>${result.strainedMeetings}</b><small>strained meetings</small></div><div><b>${result.proposals.length}</b><small>break proposals</small></div></div><div class="trace">${result.steps.map((s,i)=>`<div class="run-step"><span class="check">${i+1}</span><div><strong>${esc(s.title)}</strong><p>${esc(s.detail)}</p></div></div>`).join('')}</div><div class="eyebrow meeting-heading">MEETING ANALYSIS</div>${eventCards||'<p class="empty-state">No meetings were found in the selected range.</p>'}<div class="eyebrow meeting-heading">PROPOSED RECOVERY BREAKS</div><div class="proposal-list">${proposalHtml}</div>${writePanel}<p class="analysis-disclaimer">Sentiment uses a local phrase-based estimate on Gmail subject/snippet text. Message bodies are not fetched or retained.</p></div>`;
-    view('sanctum');
-  }catch(error){toast(error.message)}
+    const result=await api('/api/calendar/plan-preview',{method:'POST',body:JSON.stringify({messages:calendarPlanMessages,preferences:{durationMinutes:Number(values.get('durationMinutes')),maxPerDay:Number(values.get('maxPerDay')),windowStart:values.get('windowStart'),windowEnd:values.get('windowEnd'),weekdays},timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
+    calendarPlanMessages.push({role:'assistant',content:result.answer});
+    renderCalendarPlan(result);$('#calendar-plan-dialog').close();await loadCalendarPlans();
+  }catch(error){calendarPlanMessages.pop();toast(error.message)}
+  finally{button.disabled=false;button.textContent='Find break times'}
 }
 
 async function sendFeedback(button){if(!currentRun)return;try{await api(`/api/runs/${currentRun}/feedback`,{method:'POST',body:JSON.stringify({feedback:button.dataset.feedback,thanks:$('#thanks-note').value})});document.querySelectorAll('[data-feedback]').forEach(x=>x.disabled=true);toast(button.dataset.feedback==='helped'?'Feedback saved · author received laurels':'Feedback saved');await load()}catch(error){toast(error.message)}}
@@ -163,19 +191,25 @@ document.addEventListener('click',async event=>{
   if(event.target.closest('[data-action="share"]')){$('#share-dialog').showModal();return}
   if(event.target.closest('#share-dialog .close')){$('#share-dialog').close();return}
   const runner=event.target.closest('[data-run]');if(runner){run(runner.dataset.run,runner.dataset.request);return}
+  if(event.target.closest('#refine-calendar-plan')){$('#calendar-plan-note').value='';$('#calendar-plan-dialog').showModal();$('#calendar-plan-note').focus();return}
   const feedback=event.target.closest('[data-feedback]');if(feedback){sendFeedback(feedback);return}
   const disc=event.target.closest('#disconnect-google');if(disc){try{await api('/api/google/disconnect',{method:'POST',body:'{}'});await loadGoogleStatus();toast('Google disconnected')}catch(error){toast(error.message)}return}
+  const cancelPlan=event.target.closest('[data-cancel-calendar-plan]');if(cancelPlan){cancelPlan.disabled=true;try{await api(`/api/calendar/recurring/${cancelPlan.dataset.cancelCalendarPlan}`,{method:'DELETE'});await loadCalendarPlans();toast('Recurring break series canceled')}catch(error){cancelPlan.disabled=false;toast(error.message)}return}
+  if(event.target.closest('#refresh-calendar-plans')){await loadCalendarPlans();return}
   const add=event.target.closest('#add-selected-breaks');if(add){
     const proposalIds=[...document.querySelectorAll('.proposal input:checked:not(:disabled)')].map(i=>Number(i.value)).filter(Number.isFinite);
     if(!proposalIds.length){toast('Select at least one proposed break');return}
-    const attendees=($('#invitees').value||'').split(',').map(x=>x.trim()).filter(Boolean);
-    add.disabled=true;add.textContent='Adding to Google Calendar…';
-    try{const result=await api('/api/calendar/invites',{method:'POST',body:JSON.stringify({runId:currentRun,proposalIds,attendees})});add.textContent='Added to calendar';toast(`${result.created.length} break${result.created.length===1?'':'s'} added${result.invitees?` · ${result.invitees} invitees emailed`:''}`)}catch(error){add.disabled=false;add.textContent='Add selected breaks to my calendar';toast(error.message)}return;
+    const occurrences=Number($('#calendar-repeat').value)||1;
+    add.disabled=true;add.textContent='Checking availability…';
+    try{const result=await api('/api/calendar/invites',{method:'POST',body:JSON.stringify({runId:currentRun,proposalIds,occurrences})});add.textContent='Scheduled';await loadCalendarPlans();toast(`${result.created.length} recovery break${result.created.length===1?'':'s'} ${occurrences>1?`scheduled weekly for ${occurrences} occurrences`:'added to your calendar'}`)}catch(error){add.disabled=false;add.textContent='Schedule selected breaks';toast(error.message)}return;
   }
   const notice=event.target.closest('[data-toast]');if(notice)toast(notice.dataset.toast);
 });
 
 $('#people-search').addEventListener('input',renderDirectory);
+$('#calendar-plan-form').addEventListener('submit',planCalendar);
+$('#cancel-calendar-plan').addEventListener('click',()=>$('#calendar-plan-dialog').close());
+$('#close-calendar-plan').addEventListener('click',()=>$('#calendar-plan-dialog').close());
 $('#seek-form').addEventListener('submit',async event=>{
   event.preventDefault();const button=event.currentTarget.querySelector('button'),input=$('#question'),text=input.value.trim();if(!text)return;
   oracleMessages.push({role:'user',content:text});input.value='';button.disabled=true;button.textContent='Consulting…';renderOracleConversation(true);

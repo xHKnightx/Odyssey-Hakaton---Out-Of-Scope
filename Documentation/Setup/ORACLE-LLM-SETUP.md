@@ -25,6 +25,8 @@ npm start
 
 The Seek Wisdom composer displays `Live LLM` and the configured model when the connection is enabled. If a gateway call times out, fails, or returns malformed structured output, Oracle automatically uses local catalogue matching and shows that it fell back.
 
+Calendar Breather uses the same gateway settings and timeout in a calendar-specific planning request. It sends the user's break preference note and safe candidate slot metadata (date/time and duration), never event titles, descriptions, attendees, or Gmail. The model can rank only server-generated slot keys; deterministic local suggestions remain available if the gateway fails. The Calendar Breather result shows whether the live model or local fallback produced the plan.
+
 ## Hybrid retrieval
 
 PYTHIA stores employee and solution embeddings in local SQLite. Employee embedding documents contain only role, team, skills, and professional experience; names, location, availability, and contact details are excluded. The default embedding model is SecondStack `text-embedding-3-small` (1,536 dimensions).

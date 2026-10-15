@@ -56,6 +56,20 @@ The Google calendar/mail connection (`/auth/google`, same redirect URI) is a sep
 
 ## Oracle request flow
 
+## Calendar recovery planning
+
+Calendar Breather's current run flow is session-owned and requires that user's linked Google Calendar token. `POST /api/calendar/plan-preview` validates break length, weekdays, working hours, and daily limits; reads the primary calendar for seven days; converts timed and all-day events to busy intervals; and generates candidate slots locally in the calendar timezone. The SecondStack Oracle operation receives the user's scheduling note and normalized preferences plus safe slot metadata only. It can rank existing slot keys, which the server validates; a timeout, gateway error, or unusable response falls back to the deterministic local ordering. Gmail, event titles, descriptions, and attendees are excluded from this flow.
+
+The browser shows the candidate times and requires explicit selection and confirmation. `POST /api/calendar/invites` verifies run ownership, re-reads availability, checks one-time or weekly conflicts, and creates generic events without invitees. Weekly Google recurrence can be selected for 2, 4, 8, or 12 occurrences. `GET /api/calendar/recurring` and `DELETE /api/calendar/recurring/:id` are scoped to the signed-in owner; cancellation deletes the Google recurring event. This is recurring event scheduling, not a background job: it does not periodically re-check availability, and later calendar changes may create conflicts.
+
+`calendar_proposals` stores proposed times and, after confirmation, the Google event ID and recurrence rule. Google token access remains per-user. Calendar planning does not silently fall back to demo data when a signed-in user has not connected Google.
+
+The older general calendar analysis endpoint still supports Google Calendar/Gmail analysis and the legacy demo run; that flow is separate from the calendar-only recovery planner.
+
+## Oracle request flow
+
+### Seek Wisdom search and retrieval
+
 `POST /api/oracle/chat` is the main Seek Wisdom endpoint.
 
 ```mermaid
@@ -141,7 +155,7 @@ The user's Seek message is sent to SecondStack twice: once for its query embeddi
 - If embeddings fail, Oracle uses exact FTS5 retrieval.
 - If the chat model fails, Oracle uses its deterministic local recommendation fallback over the retrieved candidates.
 - If both external services are unavailable, the application remains usable with local exact search.
-- Google Calendar and Gmail are optional; Calendar Breather uses seeded demo data when Google is not connected.
+- Google Calendar is required for the current preference-based Calendar Breather flow; the older general analysis route retains its seeded demo fallback.
 - If Google sign-in is not configured, the demo persona login keeps the application usable; once Google credentials are set, persona login is off unless `AUTH_DEV_LOGIN=1`.
 
 ## Configuration

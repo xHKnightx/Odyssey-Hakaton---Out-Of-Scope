@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { GOOGLE_SCOPES, googleConfigured, googleRedirectUri, googleAuthorizationUrl, exchangeGoogleCode, readGoogleToken, removeGoogleToken, googleApi } from './lib/google.mjs';
-import { analyzeCalendar, makeDemoCalendar } from './lib/calendar.mjs';
+import { analyzeCalendar, makeDemoCalendar, normalizeBreakPreferences, hasCalendarConflict } from './lib/calendar.mjs';
 import { createGamification } from './lib/gamification.mjs';
 import { createAuth } from './lib/auth/index.mjs';
 import { currentUser } from './lib/auth/context.mjs';
 import { saveOwnProfile } from './lib/auth/profile.mjs';
-import { consultOracle, oracleStatus } from './lib/oracle.mjs';
+import { adviseCalendarBreaks, consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS calendar_proposals(id INTEGER PRIMARY KEY, run_id INT
 CREATE TABLE IF NOT EXISTS pantheon_seed(user_id INTEGER PRIMARY KEY REFERENCES users(id), title TEXT NOT NULL, shared INTEGER NOT NULL, helped INTEGER NOT NULL, hours INTEGER NOT NULL, deed TEXT, rank INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS gratitude_seed(id INTEGER PRIMARY KEY, from_user_id INTEGER REFERENCES users(id), to_user_id INTEGER REFERENCES users(id), note TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+const calendarProposalColumns=new Set(db.prepare('PRAGMA table_info(calendar_proposals)').all().map(c=>c.name));
+if(!calendarProposalColumns.has('recurrence_rule'))db.exec('ALTER TABLE calendar_proposals ADD COLUMN recurrence_rule TEXT');
+if(!calendarProposalColumns.has('created_at'))db.exec('ALTER TABLE calendar_proposals ADD COLUMN created_at TEXT');
 const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
 for (const [name,type] of [['initials','TEXT'],['color','TEXT'],['location','TEXT'],['availability','TEXT'],['experience','TEXT']]) if (!userColumns.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
 const wisdomColumns = new Set(db.prepare('PRAGMA table_info(wisdom_events)').all().map(c => c.name));
@@ -235,25 +238,71 @@ async function route(req, res) {
         return json(res,200,await analyzeCalendar({days,lookback,timeZone:String(b.timeZone||'UTC')}));
       } catch(error) { return json(res,502,{error:error.message}); }
     }
+    if(req.method==='POST'&&url.pathname==='/api/calendar/plan-preview'){
+      const b=await body(req),user=currentUser();
+      if(!user)return json(res,401,{error:'Sign in required.'});
+      if(!await readGoogleToken())return json(res,409,{error:'Connect your Google account in Connections before planning breaks.'});
+      let preferences;
+      try{preferences=normalizeBreakPreferences(b.preferences||{})}
+      catch(error){return json(res,400,{error:error.message})}
+      const messages=(Array.isArray(b.messages)?b.messages:[]).slice(-12).map(message=>({role:message?.role==='assistant'?'assistant':'user',content:String(message?.content||'').trim().slice(0,2000)})).filter(message=>message.content);
+      if(!messages.some(message=>message.role==='user'))return json(res,400,{error:'Describe what would make these breaks useful for you.'});
+      try{
+        const analysis=await analyzeCalendar({days:7,lookback:0,timeZone:String(b.timeZone||'UTC'),includeGmail:false,breakPreferences:preferences});
+        const advice=await adviseCalendarBreaks({messages,preferences:{...preferences,freeText:messages.filter(m=>m.role==='user').at(-1)?.content||''},slots:analysis.proposals});
+        const ordered=[...advice.recommendedSlotKeys.map(key=>analysis.proposals.find(slot=>slot.key===key)).filter(Boolean),...analysis.proposals.filter(slot=>!advice.recommendedSlotKeys.includes(slot.key))].slice(0,10);
+        const solution=one("SELECT id FROM solutions WHERE title='Calendar Breather' ORDER BY id LIMIT 1");
+        if(!solution)return json(res,500,{error:'Calendar Breather is not available in the solution catalogue.'});
+        const summary=JSON.stringify({source:analysis.source,meetingCount:analysis.meetingCount,emailCount:0,proposalCount:ordered.length,plannerMode:advice.mode});
+        const runId=Number(db.prepare('INSERT INTO runs(solution_id,user_id,result) VALUES(?,?,?)').run(solution.id,user.id,summary).lastInsertRowid);
+        const insert=db.prepare('INSERT INTO calendar_proposals(run_id,start_at,end_at,timezone,title,reason) VALUES(?,?,?,?,?,?)');
+        const proposals=ordered.map(slot=>{const id=Number(insert.run(runId,slot.start,slot.end,slot.timeZone,slot.title,slot.reason).lastInsertRowid);return {...slot,id,recommended:advice.recommendedSlotKeys.includes(slot.key)}});
+        const award=gamification.rewardSolutionUse(solution.id,one('SELECT owner_id FROM solutions WHERE id=?',solution.id).owner_id,user.id,one('SELECT minutes_saved FROM solutions WHERE id=?',solution.id).minutes_saved,runId);
+        return json(res,200,{runId,calendarName:analysis.calendarName,timeZone:analysis.timeZone,meetingCount:analysis.meetingCount,proposals,answer:advice.answer,planner:{mode:advice.mode,model:advice.model,fallbackReason:advice.fallbackReason||''},award,preferences});
+      }catch(error){return json(res,502,{error:error.message})}
+    }
+    if(req.method==='GET'&&url.pathname==='/api/calendar/recurring'){
+      const userId=currentUser()?.id;
+      return json(res,200,{plans:all(`SELECT p.id,p.start_at,p.end_at,p.timezone,p.title,p.reason,p.recurrence_rule,p.external_event_id,p.created_at
+        FROM calendar_proposals p JOIN runs r ON r.id=p.run_id
+        WHERE r.user_id=? AND p.status='created' AND p.recurrence_rule IS NOT NULL ORDER BY p.start_at`,userId)});
+    }
+    if(req.method==='DELETE'&&url.pathname.startsWith('/api/calendar/recurring/')){
+      const id=Number(url.pathname.split('/').at(-1)),userId=currentUser()?.id;
+      const plan=one(`SELECT p.* FROM calendar_proposals p JOIN runs r ON r.id=p.run_id
+        WHERE p.id=? AND r.user_id=? AND p.status='created' AND p.recurrence_rule IS NOT NULL`,id,userId);
+      if(!plan)return json(res,404,{error:'Recurring break not found.'});
+      try{await googleApi(`/calendar/v3/calendars/primary/events/${encodeURIComponent(plan.external_event_id)}`,{method:'DELETE'});db.prepare("UPDATE calendar_proposals SET status='cancelled' WHERE id=?").run(id);return json(res,200,{ok:true})}
+      catch(error){return json(res,502,{error:error.message})}
+    }
     if (req.method === 'POST' && url.pathname === '/api/calendar/invites') {
       try {
         const b=await body(req), runId=Number(b.runId), ids=[...new Set((b.proposalIds||[]).map(Number))].slice(0,10);
         if(one('SELECT user_id FROM runs WHERE id=?',runId)?.user_id!==currentUser()?.id) return json(res,403,{error:'Breaks can only be added from your own run.'});
         if(!ids.length) return json(res,400,{error:'Select at least one proposed break.'});
-        const attendees=[...new Set((b.attendees||[]).map(x=>String(x).trim().toLowerCase()).filter(Boolean))];
-        if(attendees.length>10||attendees.some(e=>!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) return json(res,400,{error:'Enter up to 10 valid attendee email addresses.'});
-        const created=[];
-        for(const id of ids){
-          const p=one('SELECT * FROM calendar_proposals WHERE id=? AND run_id=?',id,runId);
-          if(!p) return json(res,404,{error:'A selected proposal was not found for this run.'});
-          if(p.status==='created'){created.push({id:p.id,alreadyCreated:true});continue;}
-          const event={summary:p.title,description:`${p.reason||'A recovery break suggested by PYTHIA.'}\n\nCreated from a reviewed Calendar Breather run.`,start:{dateTime:p.start_at,timeZone:p.timezone},end:{dateTime:p.end_at,timeZone:p.timezone},transparency:'opaque',reminders:{useDefault:true}};
-          if(attendees.length) event.attendees=attendees.map(email=>({email}));
-          const external=await googleApi(`/calendar/v3/calendars/primary/events?sendUpdates=${attendees.length?'all':'none'}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(event)});
-          db.prepare('UPDATE calendar_proposals SET status=?,external_event_id=? WHERE id=?').run('created',external.id,p.id);
-          created.push({id:p.id,eventId:external.id,htmlLink:external.htmlLink||''});
+        const occurrences=Number(b.occurrences??1);
+        if(![1,2,4,8,12].includes(occurrences))return json(res,400,{error:'Choose one-time, or a weekly series of 2, 4, 8, or 12 breaks.'});
+        const first=one('SELECT start_at,end_at,timezone FROM calendar_proposals WHERE id=? AND run_id=?',ids[0],runId);
+        if(!first)return json(res,404,{error:'A selected proposal was not found for this run.'});
+        const horizon=await analyzeCalendar({days:Math.min(90,Math.max(7,occurrences*7+7)),lookback:0,timeZone:first.timezone,includeGmail:false});
+        const selected=ids.map(id=>one('SELECT * FROM calendar_proposals WHERE id=? AND run_id=?',id,runId));
+        if(selected.some(p=>!p))return json(res,404,{error:'A selected proposal was not found for this run.'});
+        const pending=selected.filter(p=>p.status!=='created'),planned=[];
+        for(const p of pending){
+          if(hasCalendarConflict([...horizon.busyIntervals,...planned],{start:p.start_at,end:p.end_at,timeZone:p.timezone,occurrences}))return json(res,409,{error:`${p.title} at ${p.start_at} conflicts with a calendar event during the selected schedule. Refresh the plan and choose another time.`});
+          const recurrenceRule=occurrences>1?`RRULE:FREQ=WEEKLY;COUNT=${occurrences}`:null;
+          planned.push({start:{dateTime:p.start_at},end:{dateTime:p.end_at}});
         }
-        return json(res,200,{created,invitees:attendees.length,calendar:'primary'});
+        const created=selected.filter(p=>p.status==='created').map(p=>({id:p.id,alreadyCreated:true}));
+        for(const p of pending){
+          const recurrenceRule=occurrences>1?`RRULE:FREQ=WEEKLY;COUNT=${occurrences}`:null;
+          const event={summary:'Recovery break',description:'A personal recovery break scheduled with PYTHIA.',start:{dateTime:p.start_at,timeZone:p.timezone},end:{dateTime:p.end_at,timeZone:p.timezone},transparency:'opaque',reminders:{useDefault:true}};
+          if(recurrenceRule)event.recurrence=[recurrenceRule];
+          const external=await googleApi('/calendar/v3/calendars/primary/events?sendUpdates=none',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(event)});
+          db.prepare('UPDATE calendar_proposals SET status=?,external_event_id=?,recurrence_rule=? WHERE id=?').run('created',external.id,recurrenceRule,p.id);
+          created.push({id:p.id,eventId:external.id,htmlLink:external.htmlLink||'',recurring:Boolean(recurrenceRule),occurrences:recurrenceRule?occurrences:1});
+        }
+        return json(res,200,{created,calendar:'primary'});
       } catch(error) { return json(res,502,{error:error.message}); }
     }
     if (req.method === 'POST' && url.pathname === '/api/seek') {
