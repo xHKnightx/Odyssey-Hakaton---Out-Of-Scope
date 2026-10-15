@@ -21,6 +21,17 @@ function renderComposerActions(){
     bar.innerHTML=`<button class="voice-button" type="button" data-voice-target="${esc(target)}" aria-label="Start voice input" aria-pressed="false" title="${esc(title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-6 9a6 6 0 0 0 12 0M12 18v3M9 21h6"/></svg></button><button class="button gold" type="submit">${esc(label)} <span>→</span></button>`;
   });
 }
+function renderReturnControls(){
+  const states=['#seek-consult','#share-consult','#seek-results','#share-results'];
+  for(const selector of states){
+    const state=$(selector);if(!state)continue;
+    let button=state.querySelector(':scope > [data-seek-home]');
+    if(!button){button=document.createElement('button');button.type='button';button.dataset.seekHome='';state.prepend(button)}
+    button.className='return-button';button.textContent='← Return';
+  }
+  const sanctumReturn=$('#sanctum .back');
+  if(sanctumReturn){sanctumReturn.className='return-button';sanctumReturn.textContent='← Return'}
+}
 function resetVoiceInput(){
   if(activeVoiceButton){
     activeVoiceButton.classList.remove('listening');
@@ -274,6 +285,7 @@ document.addEventListener('click',async event=>{
 
 $('#people-search').addEventListener('input',renderDirectory);
 renderComposerActions();
+renderReturnControls();
 document.querySelectorAll('[data-voice-target]').forEach(button=>{
   if(!BrowserSpeechRecognition){button.disabled=true;button.title='Voice input is not supported in this browser';button.setAttribute('aria-label','Voice input is not supported')}
   button.addEventListener('click',()=>startVoiceInput(button));
