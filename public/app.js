@@ -87,7 +87,7 @@ async function loadOracleStatus(){
   try{
     oracleState=await api('/api/oracle/status');
     const hint=$('#seek-form .hint');
-    if(hint)hint.textContent=`${oracleState.configured?'Oracle connected · SecondStack':'Local search'} · Enter to send · Shift+Enter for a new line`;
+    if(hint)hint.textContent='Enter to send · Shift+Enter for a new line';
   }catch(error){oracleState={configured:false};}
 }
 
