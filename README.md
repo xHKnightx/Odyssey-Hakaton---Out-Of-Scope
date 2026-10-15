@@ -14,8 +14,8 @@ Open <http://localhost:3000>. The SQLite database is created at `data/pythia.db`
 
 The MVP includes Oracle search/chat, a Calendar Breather run, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries, and Pantheon. Oracle can use an OpenAI-compatible LLM gateway, Calendar/Gmail can use Google OAuth, and both retain local demo fallbacks.
 
-The implemented system design and search/data flow are documented in [ARCHITECTURE.md](./ARCHITECTURE.md). The older [PYTHIA-architecture-and-logic.md](./PYTHIA-architecture-and-logic.md) is the broader target design and includes planned components.
+Project documentation is collected in the [Documentation index](./Documentation/README.md). The implemented system design and search/data flow are documented in [the current architecture](./Documentation/Architecture/ARCHITECTURE.md); the [target architecture](./Documentation/Architecture/PYTHIA-architecture-and-logic.md) describes broader planned components.
 
 ## Oracle LLM
 
-Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See [ORACLE-LLM-SETUP.md](./ORACLE-LLM-SETUP.md).
+Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See the [Oracle LLM setup guide](./Documentation/Setup/ORACLE-LLM-SETUP.md).

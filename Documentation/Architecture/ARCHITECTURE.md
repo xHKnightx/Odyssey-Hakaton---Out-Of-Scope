@@ -117,7 +117,7 @@ LLM_TIMEOUT_MS=45000
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-See [ORACLE-LLM-SETUP.md](./ORACLE-LLM-SETUP.md) and [GOOGLE-SETUP.md](./GOOGLE-SETUP.md) for setup details.
+See the [Oracle LLM setup guide](../Setup/ORACLE-LLM-SETUP.md) and [Google setup guide](../Setup/GOOGLE-SETUP.md) for setup details.
 
 ## Current limitations and next integrations
 

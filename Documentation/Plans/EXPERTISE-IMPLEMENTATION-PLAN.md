@@ -1,6 +1,6 @@
 # Expertise: mockup gap audit and implementation log
 
-This document tracks the Expertise directory against the supplied `PYTHIA for SecondStack (1).html` mockup. The audit captures the starting state; the status column reflects the current implementation. Each implementation step is recorded here before moving on to the next step.
+This document tracks the Expertise directory against the supplied [`PYTHIA for SecondStack (1).html`](<../Reference/PYTHIA for SecondStack (1).html>) mockup. The audit captures the starting state; the status column reflects the current implementation. Each implementation step is recorded here before moving on to the next step.
 
 ## Mockup gap audit
 

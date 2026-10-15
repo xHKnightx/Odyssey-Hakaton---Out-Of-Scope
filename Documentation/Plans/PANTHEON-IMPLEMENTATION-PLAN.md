@@ -1,6 +1,6 @@
 # Pantheon mockup comparison and implementation log
 
-This audit compares the current Pantheon view with the Pantheon in `PYTHIA for SecondStack (1).html`.
+This audit compares the current Pantheon view with the Pantheon in [`PYTHIA for SecondStack (1).html`](<../Reference/PYTHIA for SecondStack (1).html>).
 
 ## Starting point
 
