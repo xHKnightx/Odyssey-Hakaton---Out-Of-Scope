@@ -62,6 +62,20 @@ The Expertise directory filter chips are built only from recurring employees' ar
 
 ## Oracle request flow
 
+## Calendar recovery planning
+
+Calendar Breather's run flow is session-owned and requires that user's linked Google Calendar token. `POST /api/calendar/plan-preview` starts or updates a persistent local automation job. The job runs once daily or once weekly, analyzes a rolling seven-day window, generates break candidates only Monday through Friday, and previews only those working days. Timed and all-day events block conflicting weekday slots; weekend events are omitted from the preview. The user chooses Gentle, Balanced, or Extra room mode and a daily or weekly analysis cadence. PYTHIA chooses the count, timing, and duration (5, 7, 8, 9, 10, or 15 minutes); the mode sets the degree of support, not a fixed break count. On every pass, the Oracle analyzes calendar load and chooses a total target for the rolling seven-day window, counting existing holds in that window so later passes do not duplicate them. Preferences are stored in `calendar_preferences`; job cadence and next/last run state are stored in `calendar_automation_jobs`. By default the Oracle receives only sanitized calendar-load counts and free-slot metadata; Gmail and event content stay local. Context analysis is enabled by default and can be switched off. When enabled, it reads up to 90 days of prior meetings and recent Gmail subjects/snippets for external attendee addresses on matching company domains. The server sends only sanitized company keys, relevant meeting titles/dates, and a bounded sample of subjects/snippets to SecondStack. Addresses and full email bodies are excluded. The server computes same-company meeting ordinals, counts earlier long sessions, and summarizes load by weekday. A third long session with the same company is sent as an accumulated-pressure signal. The planner gives at least one suggestion to every weekday with a valid candidate, distributes further suggestions across distinct days, and enforces a mode-based per-day ceiling; its local fallback follows that distribution too. It keeps at least 30 minutes of open time between PYTHIA breaks, considering existing holds and new suggestions; the server enforces this again before proposals are returned or written. The model can recommend only server-generated slot keys; context-triggered pre-meeting slots are exactly 15 minutes and must fit the planning window and remain clear of calendar conflicts. The LLM analyzes tone from supplied meeting titles, bounded related snippets, and prior meeting titles, then favors spaced breaks through demanding workdays. A local workload fallback remains if the model is unavailable, without LLM sentiment analysis. The UI describes data sharing before opt-in, surfaces Google reauthorization errors, shows planning errors inside the modal, and previews weekdays in the seven-day window with existing events and proposed PYTHIA breaks. A previous-week replay is read-only: it creates no database proposals or Google Calendar events. The scheduler runs while the local server process is running and resumes overdue jobs once after restart.
+
+Each automation pass creates only the additional private tentative holds selected by the Oracle for the rolling seven-day window. These are holds on the user's own primary calendar, not email invitations from a separate organizer and not Google RSVP requests. `GET /api/calendar/pending` lists them; `POST /api/calendar/invitations/:id/respond` verifies ownership and lets the user accept (change event to confirmed) or decline (delete event). Accept/Decline buttons bind to rendered cards in both the run result and Connections views, and show request failures beside the invitation. Both views offer an Accept all action for pending holds. The result view can also request a previous-week replay; those simulated break blocks have no response actions. Legacy recurring-series endpoints remain available for series created by the earlier flow. The scheduler runs only while the local server process is running; overdue work is analyzed once when the app restarts.
+
+`calendar_proposals` stores candidate times, activity theme, response state, and Google event ID. Google token access remains per-user. Calendar planning does not silently fall back to demo data when a signed-in user has not connected Google.
+
+The older general calendar analysis endpoint still supports Google Calendar/Gmail analysis and the legacy demo run; that flow is separate from the calendar-only recovery planner.
+
+## Oracle request flow
+
+### Seek Wisdom search and retrieval
+
 `POST /api/oracle/chat` is the main Seek Wisdom endpoint.
 
 Seek Wisdom and Share Wisdom also expose optional browser voice input through the same composer component. In browsers with `MediaRecorder`, the microphone records locally until the colleague presses it again (or the 60-second limit is reached), then sends the audio to the signed-in-only `POST /api/transcribe` endpoint. The server forwards recordings of up to 12 MB to SecondStack's OpenAI-compatible `/audio/transcriptions` endpoint using `TRANSCRIPTION_MODEL` (`gpt-4o-mini-transcribe` by default). The editable transcript is inserted into the existing text area and is never submitted automatically. Browsers without `MediaRecorder` fall back to the Web Speech API when available; denied microphone permission always leaves typing available.
@@ -138,7 +152,7 @@ People and solution retrieval first rank expanded pools, then apply a semantic r
 
 The Oracle API returns the filtered solution candidates to the client alongside their count. The results view hides `Relevant solutions` when none pass the gate; otherwise the row opens the ranked candidates, while the LLM may select one of them as its primary recommendation.
 
-If embeddings are unavailable, retrieval automatically switches to exact-only FTS5 mode. No database content is sent to the embedding service in that mode.
+If embeddings are unavailable, retrieval switches to local lexical matching. When SQLite FTS5 is available it uses the FTS5 index; if the SQLite build cannot load FTS5, it scores the same local fields with a built-in token matcher. No database content is sent to the embedding service in local-only mode.
 
 ### Index lifecycle
 
@@ -153,7 +167,7 @@ An employee is re-indexed when:
 
 A solution is indexed when it is confirmed through Share Wisdom. Exact title matches already in the catalogue are reported as duplicates and are not inserted again.
 
-At startup, all FTS5 rows are refreshed. Embeddings are requested only when the searchable content hash changed or when `EMBEDDING_MODEL` changed. This prevents repeated embedding calls for unchanged records.
+At startup, FTS5 rows are refreshed when the SQLite build supports the module. Embeddings are requested only when the searchable content hash changed or when `EMBEDDING_MODEL` changed. This prevents repeated embedding calls for unchanged records.
 
 ## Privacy boundary
 
@@ -161,15 +175,15 @@ Names remain in local SQLite and are never included in employee embedding text o
 
 Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
 
-The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. Voice recordings are sent to SecondStack only after the colleague starts and stops microphone input; the resulting text remains editable before Seek or Share submission. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
+The user's Calendar Breather note may be sent to SecondStack when the feature runs; the UI asks users to avoid sensitive personal details. The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. Voice recordings are sent to SecondStack only after the colleague starts and stops microphone input; the resulting text remains editable before Seek or Share submission. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the filtered LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
 
-- If embeddings fail, Oracle uses exact FTS5 retrieval.
+- If embeddings or SQLite FTS5 fail, Oracle uses the built-in local token matcher.
 - If the chat model fails, Oracle uses its deterministic local recommendation fallback over the retrieved candidates.
 - If Share Wisdom extraction fails, the review screen uses its deterministic local extractor and labels that mode before anything can be saved.
 - If both external services are unavailable, the application remains usable with local exact search.
-- Google Calendar and Gmail are optional; Calendar Breather uses seeded demo data when Google is not connected.
+- Google Calendar is required for the current preference-based Calendar Breather flow; the older general analysis route retains its seeded demo fallback.
 - If Google sign-in is not configured, the demo persona login keeps the application usable; once Google credentials are set, persona login is off unless `AUTH_DEV_LOGIN=1`.
 
 ## Configuration
