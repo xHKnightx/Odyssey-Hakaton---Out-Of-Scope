@@ -80,16 +80,72 @@ describe('buildDiscoveries', () => {
     const requests = [
       request('Reuse earlier RFP answers for a new questionnaire', 1),
       request('Answer security questionnaires from earlier RFP responses', 2),
-      request('Totally unique question about forklift certification', 3)
+      request('Compile RFP questionnaire answers from earlier responses', 3),
+      request('Reuse earlier RFP answers when filling a security questionnaire', 4),
+      request('Totally unique question about forklift certification', 5)
     ];
-    const result = buildDiscoveries({ requests, solutions, people, now: NOW });
-    const shared = result.topRequests.find(cluster => cluster.askers === 2);
+    const result = buildDiscoveries({ requests, solutions, people, now: NOW, viewerId: 5 });
+    const shared = result.topRequests.find(cluster => cluster.askers === 4);
     const lone = result.topRequests.find(cluster => cluster.askers === 1);
     assert.equal(shared.examples.length, 2);
     assert.deepEqual(lone.examples, []);
     assert.match(lone.title, /^Topic: /);
     assert.doesNotMatch(lone.title, /forklift certification/);
     assert.doesNotMatch(JSON.stringify(result), /user_?id|userId/);
+  });
+
+  describe('privacy threshold', () => {
+    const rfp = [
+      'Reuse earlier RFP answers for a new questionnaire',
+      'Answer security questionnaires from earlier RFP responses',
+      'Compile RFP questionnaire answers from earlier responses'
+    ];
+    const clusterOf = (requests, viewerId) => buildDiscoveries({ requests, solutions, people, now: NOW, viewerId }).topRequests.find(cluster => cluster.count === requests.length);
+
+    it('does not quote a group of two colleagues', () => {
+      const group = clusterOf(rfp.slice(0, 2).map((text, index) => request(text, index + 1)), null);
+      assert.equal(group.askers, 2);
+      assert.deepEqual(group.examples, []);
+      assert.equal(group.title, 'Topic withheld for privacy');
+    });
+
+    it('does not let a probing request unlock another colleague\'s text', () => {
+      const victim = request('zorblax grievance about quokka reimbursement', 1);
+      const probes = Array.from({ length: 6 }, (_, index) => request(`zorblax quokka probe number ${index + 1} reimbursement`, 9));
+      const seen = JSON.stringify(clusterOf([victim, ...probes], 9));
+      assert.doesNotMatch(seen, /grievance/);
+      const group = clusterOf([victim, ...probes], 9);
+      assert.deepEqual(group.examples, []);
+      assert.equal(group.title, 'Topic withheld for privacy');
+    });
+
+    it('counts only colleagues other than the viewer towards the threshold', () => {
+      const requests = rfp.map((text, index) => request(text, index + 1));
+      const asViewer = clusterOf(requests, 1);
+      assert.equal(asViewer.askers, 3);
+      assert.deepEqual(asViewer.examples, []);
+      const asOutsider = clusterOf(requests, 4);
+      assert.equal(asOutsider.examples.length, 2);
+    });
+
+    it('never quotes the viewer\'s own requests back', () => {
+      const own = 'Reuse RFP answers to complete a questionnaire from earlier responses';
+      const requests = [own, ...rfp, 'Fill an RFP questionnaire using earlier answers and responses'].map((text, index) => request(text, index + 1));
+      const group = clusterOf(requests, 1);
+      assert.equal(group.askers, 5);
+      assert.equal(group.examples.length, 2);
+      assert.ok(group.examples.every(text => text !== own));
+      assert.notEqual(group.title, own);
+    });
+
+    it('keeps a keyword label for a topic only the viewer asked about', () => {
+      const requests = [request('Totally unique question about forklift certification', 7)];
+      const own = clusterOf(requests, 7);
+      assert.match(own.title, /^Topic: /);
+      assert.deepEqual(own.examples, []);
+      assert.equal(clusterOf(requests, 8).title, 'Topic withheld for privacy');
+      assert.equal(clusterOf(requests, null).title, 'Topic withheld for privacy');
+    });
   });
 
   it('titles and quotes a group in the language most of it was written in', () => {
@@ -277,6 +333,22 @@ describe('GET /api/discoveries', () => {
     assert.ok(all.totals.solvedShare >= 70 && all.totals.solvedShare <= 90);
     assert.ok(all.catalogue.skills >= 2 && all.catalogue.apps >= 4);
     assert.doesNotMatch(JSON.stringify(all), /user_?id|userId|Priya|Daniel Ortiz/);
+  });
+
+  it('does not let a probing colleague read another colleague\'s request through a shared topic', async () => {
+    const victim = await signInAs(app, 'Priya Nair');
+    const attacker = await signInAs(app, 'Daniel Ortiz');
+    const secret = 'zorblax grievance about quokka reimbursement';
+    assert.equal((await victim.client.request('/api/seek', { method: 'POST', json: { text: secret } })).status, 200);
+    for (let index = 1; index <= 8; index++) {
+      assert.equal((await attacker.client.request('/api/seek', { method: 'POST', json: { text: `zorblax quokka probe number ${index} reimbursement` } })).status, 200);
+    }
+    for (const period of ['7d', '30d', 'all']) {
+      for (const { client } of [victim, attacker]) {
+        const body = (await client.request(`/api/discoveries?period=${period}`)).text;
+        assert.doesNotMatch(body, /grievance/, `${period} leaked the request`);
+      }
+    }
   });
 
   it('counts a new Oracle question with the outcome Oracle gave it', async () => {

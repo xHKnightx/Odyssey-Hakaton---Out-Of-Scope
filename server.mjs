@@ -162,6 +162,8 @@ async function binaryBody(req, maxBytes=12*1024*1024) {
 }
 const oauthStates = new Map();
 const redirect = (res, location) => { res.writeHead(302, { location }); res.end(); };
+// Directory fields every colleague may see; account data (email, Google subject, last login, avatar) stays out of /api/overview.
+const PUBLIC_PERSON_COLUMNS = ['id','name','title','team','skills','honorific','initials','color','location','availability','experience'].map(column => `u.${column}`).join(',');
 const resolveUserId = () => currentUser()?.id ?? null; // the actor is the signed-in user; any userId sent by the client is ignored
 function roman(value){let number=value,output='';for(const [n,symbol] of [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']])while(number>=n){output+=symbol;number-=n}return output||'I'}
 function pantheonRows(period='q'){
@@ -331,20 +333,20 @@ async function route(req, res) {
     }
     if (req.method === 'GET' && url.pathname === '/api/discoveries') {
       const period=url.searchParams.get('period');
-      return json(res,200,discoveriesFor(db,{period:period in PERIODS?period:DEFAULT_PERIOD}));
+      return json(res,200,discoveriesFor(db,{period:period in PERIODS?period:DEFAULT_PERIOD,viewerId:resolveUserId()}));
     }
     if (req.method === 'GET' && url.pathname === '/api/overview') {
       const activeUserId=resolveUserId(url.searchParams.get('userId'));
       if(!activeUserId)return json(res,400,{error:'A valid profile is required.'});
       const period=['m','q','y'].includes(url.searchParams.get('period'))?url.searchParams.get('period'):'q';
-      const people=all(`SELECT u.*,COALESCE(SUM(w.points),0) points FROM users u LEFT JOIN wisdom_events w ON w.user_id=u.id GROUP BY u.id ORDER BY points DESC,u.name`).map(person=>({...person,...gamification.progression(person.points)}));
+      const people=all(`SELECT ${PUBLIC_PERSON_COLUMNS},COALESCE(SUM(w.points),0) points FROM users u LEFT JOIN wisdom_events w ON w.user_id=u.id GROUP BY u.id ORDER BY points DESC,u.name`).map(person=>({...person,...gamification.progression(person.points)}));
       const pantheon=pantheonRows(period);
       const allTime=pantheonRows('y'),myIndex=allTime.findIndex(person=>person.id===activeUserId),mine=allTime[myIndex]||{points:0,shared:0,helped:0,hours:0};
       const level=gamification.progression(mine.points),active=people.find(person=>person.id===activeUserId);
       const myStanding={rank:roman(myIndex<0?people.length:myIndex+1),position:myIndex<0?people.length:myIndex+1,points:mine.points,level:level.level,nextLevel:level.nextLevel,pointsToNext:level.pointsToNext,progress:level.progress,helped:mine.helped,shared:mine.shared,hours:mine.hours,nudge:activeUserId===1?mockupSeed.myStanding.nudge:(mine.points?'Keep sharing expertise to grow your standing.':'Your profile starts at zero laurels. Ask or share to earn your first points.')};
       const actualGratitude=all(`SELECT w.note,f.name from_name,f.initials from_initials,f.color from_color,t.name to_name,t.initials to_initials,t.color to_color FROM wisdom_events w JOIN users f ON f.id=w.actor_id JOIN users t ON t.id=w.user_id WHERE w.kind='thanked' ORDER BY w.id DESC LIMIT 5`);
       const gratitude=actualGratitude.length?actualGratitude:all('SELECT g.note,f.name from_name,f.initials from_initials,f.color from_color,t.name to_name,t.initials to_initials,t.color to_color FROM gratitude_seed g JOIN users f ON f.id=g.from_user_id JOIN users t ON t.id=g.to_user_id ORDER BY g.id');
-      return json(res, 200, { activeUserId,people,pantheon,gratitude,myStanding,mySkills:active?.skills?.split(',').map(s=>s.trim())||[],solutions:all('SELECT s.*,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id ORDER BY s.id'),requests:all('SELECT r.*,u.name asker FROM requests r JOIN users u ON u.id=r.user_id ORDER BY r.id DESC'),events:all('SELECT w.*,u.name FROM wisdom_events w JOIN users u ON u.id=w.user_id ORDER BY w.id DESC LIMIT 10'),runs:all('SELECT r.*,s.title solution,u.name FROM runs r JOIN solutions s ON s.id=r.solution_id JOIN users u ON u.id=s.owner_id ORDER BY r.id DESC LIMIT 6') });
+      return json(res, 200, { activeUserId,people,pantheon,gratitude,myStanding,mySkills:active?.skills?.split(',').map(s=>s.trim())||[],solutions:all('SELECT s.*,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id ORDER BY s.id'),requests:all('SELECT * FROM requests WHERE user_id=? ORDER BY id DESC LIMIT 100',activeUserId) });
     }
     if (req.method === 'POST' && url.pathname === '/api/people') {
       const saved=saveOwnProfile(db,currentUser(),await body(req));
