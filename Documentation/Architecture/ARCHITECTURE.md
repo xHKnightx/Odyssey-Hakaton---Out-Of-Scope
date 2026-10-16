@@ -78,7 +78,7 @@ sequenceDiagram
   P->>E: Embed latest message
   E-->>P: 1,536-dimensional query vector
   P->>S: Cosine search + FTS5 exact search
-  S-->>P: Top 5 solutions + top 5 people
+  S-->>P: Up to 5 qualified solutions + people
   P->>L: Conversation + candidates
   Note over P,L: People are anonymized<br/>before transmission
   L-->>P: Structured recommendation with IDs
@@ -94,7 +94,9 @@ The model must choose one of three recommendation types:
 
 The model cannot select arbitrary records. Returned solution and person IDs are checked against the retrieved candidate set. Invalid IDs are discarded; an invalid solution recommendation becomes `build`.
 
-The signed-in browser also receives the ordered IDs of the locally retrieved colleague candidates. `People who can help` opens that exact result set (up to five profiles) instead of the full Expertise directory. Profile names and details are resolved from the already authorized local directory response; they are still not included in the LLM prompt.
+Structured-output validation also reconciles prose with IDs: if the answer explicitly names the exact role title of a retrieved colleague but omits that colleague from `peopleIds`, the server resolves that title locally and adds the validated candidate ID. This prevents an answer from recommending a role while the UI incorrectly reports that nobody was selected; records outside the retrieved set can never be added.
+
+The signed-in browser also receives the ordered IDs of the locally qualified colleague candidates. `People who can help` contains only the zero to three colleagues explicitly selected by Pythia. Any other candidates that passed the local relevance gate appear separately under `More possible matches`; neither control opens the full Expertise directory. Profile names and details are resolved from the already authorized local directory response and are still not included in the LLM prompt.
 
 ## Share Wisdom flow
 
@@ -131,6 +133,8 @@ Candidate scores currently use:
 72% semantic cosine similarity
 28% FTS5 rank
 ```
+
+People retrieval first ranks an expanded pool, then applies a semantic relevance gate before taking at most five candidates. The strongest semantic match must reach `0.30`; remaining profiles must stay within `0.12` semantic similarity of that best match and retain at least `55%` of its combined hybrid score. This produces a variable candidate count, including zero. In exact-only fallback mode, positive FTS5 matches are preserved up to the limit because semantic scores are unavailable. These constants are covered by retrieval tests and should be recalibrated if the embedding model changes.
 
 If embeddings are unavailable, retrieval automatically switches to exact-only FTS5 mode. No database content is sent to the embedding service in that mode.
 
