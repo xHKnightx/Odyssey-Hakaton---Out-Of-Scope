@@ -120,6 +120,24 @@ A reusable asset requires both an explicit creation/use statement and a concrete
 
 Nothing is written during analysis. The colleague can edit or deselect every extracted item. `POST /api/share` then stores the original contribution, merges confirmed areas of expertise and experience into the signed-in user's profile, and inserts confirmed non-duplicate solutions into the local catalogue. Newly shared agents are catalogue records only and remain non-runnable until a real executor is integrated. The updated profile and new solutions are immediately added to FTS5 and, when configured, their embeddings are refreshed.
 
+## Discoveries
+
+The Discoveries view (`public/discoveries.js`, `public/discoveries.css`) shows which questions colleagues ask most, how many were answered, and how large the catalogue is. It is computed live from SQLite by `lib/discoveries.mjs` and served by `GET /api/discoveries?period=7d|30d|all` (signed-in only; an unknown period falls back to `30d`). No LLM call is involved.
+
+**What is counted.**
+
+- *Requests* are Oracle conversations: the first message of each conversation, from `requests` rows with `turn = 1` in the selected period. Follow-up messages are stored with their turn number but are not counted again.
+- *Solved* means Oracle answered with a catalogue solution or with colleagues who can help; *unsolved* means it found neither and proposed building something new. The outcome is stored per request (`outcome` = `solution` / `person` / `build`, `solution_id`, and `resolved` = 1 for the first two) when `/api/oracle/chat` answers. A follow-up can upgrade the outcome of the same person's first request from the last six hours, never downgrade it. "Confirmed helpful" counts requests whose run was rated `helped`.
+- *Skills* are catalogue solutions of kind `skill`, shown with the number of distinct areas of expertise across profiles; *Apps* are solutions of kind `agent`, `tool` or `automation`. Both are catalogue totals and do not depend on the period.
+
+**Grouping.** Requests answered by the same catalogue solution form one group, whatever their wording. The remaining requests are grouped by keyword similarity: terms come from the Oracle tokenizer (including its Russian/English concept map) with plurals folded and question words dropped, similarity is a tf-idf cosine, and groups are merged by average link while the average similarity is at least 0.05. Colleague-answered and unanswered requests are never grouped together. A group is *Opportunity* from three requests and *Emerging* below that; groups without a catalogue solution are listed as gaps. This is deliberately simple and offline: paraphrases that share no word are not joined, and an occasional shared word can join two unrelated requests.
+
+**Outcomes for older requests.** Rows written before outcomes were stored (`outcome IS NULL`) are classified at startup with the same offline keyword ranking Oracle uses as its fallback, requiring two shared keywords so a single common word does not count as a match. These are estimates; new requests carry the real outcome.
+
+**Privacy.** The response contains no names or user ids. Free text is returned only for groups asked by at least two different colleagues, as at most two truncated examples without attribution; a request from a single colleague appears only as a label of its most frequent terms.
+
+**Seed.** Seed version `mockup-2026-10-v4` extends the demo requests to 32 (up from 7), each with an `outcome`, an optional `solution` title and `daysAgo`, so every period filter shows different numbers. Existing databases receive the new requests on the next start; the original seven get their outcome and age only if they have not been classified yet, and requests created by users are never changed by the seed.
+
 ## Hybrid candidate retrieval
 
 Hybrid retrieval is implemented in `lib/retrieval.mjs` and combines two independent signals.
@@ -212,5 +230,6 @@ See the [Oracle LLM setup guide](../Setup/ORACLE-LLM-SETUP.md) and [Google setup
 - There is no generic remote-agent invocation protocol yet. Finding an agent and running it are separate integrations.
 - Search compares vectors in application memory. This is appropriate for the current small dataset; a larger deployment should move vector search to `sqlite-vec` or Postgres with pgvector.
 - Authentication identifies people but there are no roles: every signed-in colleague can read all profiles and the catalogue. Sign-in has no rate limiting, and sessions live in the local SQLite file of a single process.
+- Discoveries groups requests by keywords, not meaning, and counts every Oracle conversation once; it does not yet merge near-duplicates written in different vocabulary or use embeddings.
 - Profiles have no field-level access-control model yet. Permission filtering must be applied before retrieval in a multi-tenant deployment.
 - The MCP endpoint and SecondStack/ControlTower catalogue synchronization described in the target architecture are still planned work.

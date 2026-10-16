@@ -16,6 +16,7 @@ import { createRetrieval } from './lib/retrieval.mjs';
 import { analyzeProfile, analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
 import { expertiseKey, normalizeExpertiseAreas } from './lib/expertise.mjs';
 import { transcribeAudio, transcriptionConfigured, transcriptionModel } from './lib/transcription.mjs';
+import { backfillRequestOutcomes, discoveriesFor, ensureDiscoverySchema, recordOutcome, PERIODS, DEFAULT_PERIOD } from './lib/discoveries.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -55,6 +56,7 @@ const userColumns = new Set(db.prepare('PRAGMA table_info(users)').all().map(c =
 for (const [name,type] of [['initials','TEXT'],['color','TEXT'],['location','TEXT'],['availability','TEXT'],['experience','TEXT']]) if (!userColumns.has(name)) db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
 const wisdomColumns = new Set(db.prepare('PRAGMA table_info(wisdom_events)').all().map(c => c.name));
 for (const [name,type] of [['actor_id','INTEGER'],['reference_id','INTEGER'],['impact_minutes','INTEGER NOT NULL DEFAULT 0']]) if (!wisdomColumns.has(name)) db.exec(`ALTER TABLE wisdom_events ADD COLUMN ${name} ${type}`);
+ensureDiscoverySchema(db);
 const auth = createAuth(db);
 const count = db.prepare('SELECT COUNT(*) n FROM users').get().n;
 if (!count) {
@@ -93,12 +95,20 @@ if (one('SELECT value FROM app_meta WHERE key=?', 'mockup_seed_version')?.value 
     if (exists) db.prepare('UPDATE solutions SET kind=?,summary=?,owner_id=?,minutes_saved=?,runnable=? WHERE id=?').run(s.kind,s.summary,personIds[s.owner],s.minutesSaved,s.runnable,exists.id);
     else db.prepare('INSERT INTO solutions(title,kind,summary,owner_id,minutes_saved,runnable) VALUES(?,?,?,?,?,?)').run(s.title,s.kind,s.summary,personIds[s.owner],s.minutesSaved,s.runnable);
   }
-  for (const r of mockupSeed.requests) if (!one('SELECT id FROM requests WHERE text=?',r.text)) db.prepare('INSERT INTO requests(text,user_id) VALUES(?,?)').run(r.text,personIds[r.asker]);
+  for (const r of mockupSeed.requests) {
+    const solutionId = r.solution ? one('SELECT id FROM solutions WHERE title=?', r.solution)?.id ?? null : null;
+    const age = `-${Number(r.daysAgo) || 0} days`, resolved = ['solution','person'].includes(r.outcome) ? 1 : 0;
+    const existing = one('SELECT id,outcome FROM requests WHERE text=?', r.text);
+    if (!existing) db.prepare("INSERT INTO requests(text,user_id,created_at,outcome,solution_id,resolved) VALUES(?,?,datetime('now',?),?,?,?)").run(r.text,personIds[r.asker],age,r.outcome ?? null,solutionId,resolved);
+    else if (existing.outcome == null && r.outcome) db.prepare("UPDATE requests SET created_at=datetime('now',?),outcome=?,solution_id=?,resolved=? WHERE id=?").run(age,r.outcome,solutionId,resolved,existing.id);
+  }
   for (const h of mockupSeed.pantheon) db.prepare('INSERT INTO pantheon_seed(user_id,title,shared,helped,hours,deed,rank) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET title=excluded.title,shared=excluded.shared,helped=excluded.helped,hours=excluded.hours,deed=excluded.deed,rank=excluded.rank').run(personIds[h.person],h.title,h.shared,h.helped,h.hours,h.deed,h.rank);
   if (!one('SELECT id FROM gratitude_seed LIMIT 1')) for (const g of mockupSeed.gratitude) db.prepare('INSERT INTO gratitude_seed(from_user_id,to_user_id,note) VALUES(?,?,?)').run(personIds[g.from],personIds[g.to],g.note);
   db.prepare('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('mockup_seed_version',mockupSeed.version);
   console.log(`Loaded ${mockupSeed.people.length} mockup people and ${mockupSeed.solutions.length} mockup solutions.`);
 }
+
+backfillRequestOutcomes(db);
 
 if (!one('SELECT value FROM app_meta WHERE key=?','expertise_normalization_v1')) {
   const updateExpertise=db.prepare('UPDATE users SET skills=? WHERE id=?');
@@ -273,6 +283,7 @@ async function route(req, res) {
       const inserted=db.prepare('INSERT INTO requests(text,user_id) VALUES(?,?)').run(text,userId);
       const requestId=Number(inserted.lastInsertRowid),award=gamification.rewardSeek(userId,requestId);
       const result=await consultOracle({messages,solutions,people,user});
+      recordOutcome(db,{requestId,userId,turn:messages.filter(message=>message?.role==='user').length,recommendation:result.recommendation});
       const solution=result.recommendation.solutionId?solutions.find(item=>item.id===result.recommendation.solutionId)||null:null;
       if(solution?.title==='Calendar Breather')solution.details=[
         'Reviews your calendar workload and identifies conflict-free gaps during the day.',
@@ -310,6 +321,10 @@ async function route(req, res) {
       if (token?.refresh_token) fetch(`https://oauth2.googleapis.com/revoke?${new URLSearchParams({token:token.refresh_token})}`, { method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'} }).catch(()=>{});
       await removeGoogleToken();
       return json(res, 200, { ok:true });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/discoveries') {
+      const period=url.searchParams.get('period');
+      return json(res,200,discoveriesFor(db,{period:period in PERIODS?period:DEFAULT_PERIOD}));
     }
     if (req.method === 'GET' && url.pathname === '/api/overview') {
       const activeUserId=resolveUserId(url.searchParams.get('userId'));
@@ -493,6 +508,7 @@ async function route(req, res) {
       const scored = candidates.map(s=>({ ...s, score: words.filter(w=>(s.title+' '+s.summary+' '+s.kind).toLowerCase().includes(w)).length })).sort((a,b)=>b.score-a.score);
       const best = scored[0] || candidates[0];
       const award=gamification.rewardSeek(userId,Number(inserted.lastInsertRowid));
+      recordOutcome(db,{requestId:Number(inserted.lastInsertRowid),userId,recommendation:best.score>0?{type:'solution',solutionId:best.id}:{type:'build'}});
       return json(res,200,{requestId:Number(inserted.lastInsertRowid),text,solution:best,match:Math.min(96,Math.max(72,78+best.score*6)),recommendation:best.runnable?'Run a proven solution':'Start with this shared resource',award,peers:all('SELECT name,team,honorific FROM users WHERE id<>? LIMIT 3',userId)});
     }
     if (req.method === 'POST' && url.pathname === '/api/run') {
