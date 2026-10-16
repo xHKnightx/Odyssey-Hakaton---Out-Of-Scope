@@ -95,13 +95,20 @@ if (one('SELECT value FROM app_meta WHERE key=?', 'mockup_seed_version')?.value 
     if (exists) db.prepare('UPDATE solutions SET kind=?,summary=?,owner_id=?,minutes_saved=?,runnable=? WHERE id=?').run(s.kind,s.summary,personIds[s.owner],s.minutesSaved,s.runnable,exists.id);
     else db.prepare('INSERT INTO solutions(title,kind,summary,owner_id,minutes_saved,runnable) VALUES(?,?,?,?,?,?)').run(s.title,s.kind,s.summary,personIds[s.owner],s.minutesSaved,s.runnable);
   }
-  for (const r of mockupSeed.requests) {
-    const solutionId = r.solution ? one('SELECT id FROM solutions WHERE title=?', r.solution)?.id ?? null : null;
-    const age = `-${Number(r.daysAgo) || 0} days`, resolved = ['solution','person'].includes(r.outcome) ? 1 : 0;
-    const existing = one('SELECT id,outcome FROM requests WHERE text=?', r.text);
-    if (!existing) db.prepare("INSERT INTO requests(text,user_id,created_at,outcome,solution_id,resolved) VALUES(?,?,datetime('now',?),?,?,?)").run(r.text,personIds[r.asker],age,r.outcome ?? null,solutionId,resolved);
-    else if (existing.outcome == null && r.outcome) db.prepare("UPDATE requests SET created_at=datetime('now',?),outcome=?,solution_id=?,resolved=? WHERE id=?").run(age,r.outcome,solutionId,resolved,existing.id);
-  }
+  // Seeded requests are the demo history; run feedback is added only where the seed says so and a request has no run yet.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const r of mockupSeed.requests) {
+      const solutionId = r.solution ? one('SELECT id FROM solutions WHERE title=?', r.solution)?.id ?? null : null;
+      const age = `-${Number(r.daysAgo) || 0} days`, resolved = ['solution','person'].includes(r.outcome) ? 1 : 0;
+      const existing = one('SELECT id,outcome FROM requests WHERE text=?', r.text);
+      let requestId = existing?.id;
+      if (!existing) requestId = Number(db.prepare("INSERT INTO requests(text,user_id,created_at,outcome,solution_id,resolved) VALUES(?,?,datetime('now',?),?,?,?)").run(r.text,personIds[r.asker],age,r.outcome ?? null,solutionId,resolved).lastInsertRowid);
+      else if (existing.outcome == null && r.outcome) db.prepare("UPDATE requests SET created_at=datetime('now',?),outcome=?,solution_id=?,resolved=? WHERE id=?").run(age,r.outcome,solutionId,resolved,existing.id);
+      if (r.feedback && solutionId && !one('SELECT id FROM runs WHERE request_id=?', requestId)) db.prepare('INSERT INTO runs(solution_id,user_id,request_id,feedback,created_at) SELECT ?,user_id,id,?,created_at FROM requests WHERE id=?').run(solutionId,r.feedback,requestId);
+    }
+    db.exec('COMMIT');
+  } catch(error) { db.exec('ROLLBACK'); throw error; }
   for (const h of mockupSeed.pantheon) db.prepare('INSERT INTO pantheon_seed(user_id,title,shared,helped,hours,deed,rank) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET title=excluded.title,shared=excluded.shared,helped=excluded.helped,hours=excluded.hours,deed=excluded.deed,rank=excluded.rank').run(personIds[h.person],h.title,h.shared,h.helped,h.hours,h.deed,h.rank);
   if (!one('SELECT id FROM gratitude_seed LIMIT 1')) for (const g of mockupSeed.gratitude) db.prepare('INSERT INTO gratitude_seed(from_user_id,to_user_id,note) VALUES(?,?,?)').run(personIds[g.from],personIds[g.to],g.note);
   db.prepare('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('mockup_seed_version',mockupSeed.version);

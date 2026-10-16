@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, it } from 'node:test';
 import { backfillRequestOutcomes, buildDiscoveries, discoveriesFor, ensureDiscoverySchema, recordOutcome } from '../lib/discoveries.mjs';
@@ -89,6 +90,18 @@ describe('buildDiscoveries', () => {
     assert.match(lone.title, /^Topic: /);
     assert.doesNotMatch(lone.title, /forklift certification/);
     assert.doesNotMatch(JSON.stringify(result), /user_?id|userId/);
+  });
+
+  it('titles and quotes a group in the language most of it was written in', () => {
+    const requests = [
+      request('Нужен onboarding plan для нового сотрудника, с чего начать?', 1),
+      request('Build a 30-60-90 day onboarding plan for a new consultant', 2),
+      request('Onboarding checklist of access and tools for a new joiner', 3)
+    ];
+    const [group] = buildDiscoveries({ requests, solutions, people, now: NOW }).gaps;
+    assert.equal(group.count, 3);
+    assert.doesNotMatch(group.title, /\p{Script=Cyrillic}/u);
+    assert.ok(group.examples.length === 2 && group.examples.every(text => !/\p{Script=Cyrillic}/u.test(text)));
   });
 
   it('reports confirmed help from runs rated "helped"', () => {
@@ -204,6 +217,42 @@ describe('outcome storage', () => {
   });
 });
 
+describe('demo seed history', () => {
+  const seed = JSON.parse(readFileSync(new URL('../seed/mockup-seed.json', import.meta.url), 'utf8'));
+  const keys = new Set(seed.people.map(person => person.key));
+  const byTitle = new Map(seed.solutions.map(solution => [solution.title, solution]));
+  const history = seed.requests;
+
+  it('refers only to people and solutions that exist, and every text is unique', () => {
+    assert.ok(history.every(item => keys.has(item.asker)), 'unknown asker');
+    assert.ok(history.every(item => !item.solution || byTitle.has(item.solution)), 'unknown solution');
+    const texts = history.map(item => item.text.trim().toLowerCase());
+    assert.equal(new Set(texts).size, texts.length);
+  });
+
+  it('gives only solution answers a solution, and run feedback only to runnable ones', () => {
+    for (const item of history) {
+      assert.ok(['solution', 'person', 'build'].includes(item.outcome), item.text);
+      assert.equal(Boolean(item.solution), item.outcome === 'solution', item.text);
+      assert.ok(Number.isFinite(item.daysAgo) && item.daysAgo >= 0, item.text);
+      if (item.feedback) {
+        assert.ok(['helped', 'somewhat'].includes(item.feedback), item.text);
+        assert.equal(byTitle.get(item.solution)?.runnable, 1, `feedback on a solution that cannot be run: ${item.text}`);
+      }
+    }
+  });
+
+  it('reads like months of use: mostly solved, still growing, with unsolved gaps left', () => {
+    const within = (from, to) => history.filter(item => item.daysAgo >= from && item.daysAgo < to).length;
+    const solvedShare = history.filter(item => item.outcome !== 'build').length / history.length;
+    assert.ok(history.length >= 300);
+    assert.ok(Math.max(...history.map(item => item.daysAgo)) >= 150);
+    assert.ok(solvedShare >= 0.75 && solvedShare < 0.9);
+    assert.ok(within(0, 30) > 2 * within(150, 180));
+    assert.ok(history.some(item => item.outcome === 'build'));
+  });
+});
+
 describe('GET /api/discoveries', () => {
   let app;
   before(async () => { app = await startApp(); });
@@ -224,6 +273,8 @@ describe('GET /api/discoveries', () => {
     assert.equal(all.totals.solved + all.totals.open, all.totals.requests);
     assert.equal(all.topRequests[0].title, 'Calendar Breather');
     assert.ok(all.gaps.length > 0 && all.gaps.every(cluster => cluster.status === 'gap'));
+    assert.ok(all.totals.requests >= 300 && all.totals.confirmed > 0);
+    assert.ok(all.totals.solvedShare >= 70 && all.totals.solvedShare <= 90);
     assert.ok(all.catalogue.skills >= 2 && all.catalogue.apps >= 4);
     assert.doesNotMatch(JSON.stringify(all), /user_?id|userId|Priya|Daniel Ortiz/);
   });
