@@ -94,6 +94,8 @@ The model must choose one of three recommendation types:
 
 The model cannot select arbitrary records. Returned solution and person IDs are checked against the retrieved candidate set. Invalid IDs are discarded; an invalid solution recommendation becomes `build`.
 
+The signed-in browser also receives the ordered IDs of the locally retrieved colleague candidates. `People who can help` opens that exact result set (up to five profiles) instead of the full Expertise directory. Profile names and details are resolved from the already authorized local directory response; they are still not included in the LLM prompt.
+
 ## Share Wisdom flow
 
 Share Wisdom mirrors the prototype's review-first flow. `POST /api/share/analyze` sends the colleague's free-text offering to the configured SecondStack chat model. `lib/wisdom.mjs` asks for bounded structured JSON containing **areas of expertise** (human capabilities), experience evidence, and **reusable assets** (`agent`, `automation`, `guide`, `tool`, `knowledge`, or a packaged `skill`). The LLM uses the unambiguous `expertiseAreas` field; the application maps it to the existing internal `skills` field. In the UI a catalogue `skill` is labelled **Playbook / Agent skill** so it cannot be confused with a person's expertise. The server validates and truncates every model-produced field before returning a review draft. If the model is unavailable, a deterministic local extractor provides a clearly labelled fallback draft.
