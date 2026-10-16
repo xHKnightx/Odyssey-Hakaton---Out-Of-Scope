@@ -8,7 +8,7 @@ This work implements the earning rules in the [gamification framework](../Archit
 
 - `wisdom_events` stores point deltas, but most actions write hard-coded records directly in route handlers.
 - Overview calculates a lifetime point sum, but the Pantheon itself reads fixed `pantheon_seed` ranks and impact numbers.
-- Seek awards 2 points, Share 10, a solution run awards its author 5 on every run, feedback awards 10 for helped and 5 for an optional thank-you note.
+- Seek awards 2 points, Share 10, a solution run awards its author 5 on every run, feedback awards 10 for helped and 5 for an optional thank-you note. (Implemented since: a helped confirmation pays 20 and only once per confirming colleague, solution and month, with at most 5 per colleague per week, so repeated runs cannot be farmed.)
 - The current person is effectively hard-coded to user ID 1 for Seek, Share, Run, and feedback. New profiles cannot earn points by using those actions.
 - New profiles are inserted without initial laurels, which is the correct starting balance, but the UI does not show their level or score.
 
