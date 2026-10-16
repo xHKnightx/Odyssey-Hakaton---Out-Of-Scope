@@ -241,7 +241,7 @@ function oracleRecommendation(result){
     return `<article class="oracle-preview"><div class="oracle-preview-icon">◇</div><div class="grow"><div class="kind">${esc(solutionKindLabel(solution.kind))}${solution.runnable?' · RUNNABLE':''}</div><h3>${esc(solution.title)}</h3><p>${esc(solution.summary)}</p></div><div class="oracle-match"><b>${Math.round(rec.confidence||0)}%</b><span>match</span></div></article>${runAction}`;
   }
   if(rec.type==='person'&&result.people?.length){
-    return `<div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person,'lg')}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span><span class="oracle-person-go">›</span></button>`).join('')}</div><div class="oracle-primary-actions"><button class="button gold" data-person="${result.people[0].id}">Ask ${esc(result.people[0].name.split(' ')[0])} for help →</button><button class="button" data-view="expertise">See all expertise</button></div>`;
+    return `<div class="oracle-people">${result.people.map(person=>`<button class="oracle-person" data-person="${person.id}">${avatar(person,'lg')}<span><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><em>${esc(person.skills)}</em></span><span class="oracle-person-go">›</span></button>`).join('')}</div><div class="oracle-primary-actions"><button class="button gold" data-person="${result.people[0].id}">Ask ${esc(result.people[0].name.split(' ')[0])} for help →</button></div>`;
   }
   if(rec.type==='build'){
     const steps=(rec.instructions||[]).map(step=>`<li>${esc(step)}</li>`).join('');
