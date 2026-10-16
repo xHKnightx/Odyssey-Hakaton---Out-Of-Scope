@@ -1,93 +1,50 @@
-# Odyssey Hakaton - Out Of Scope
+# PYTHIA local MVP
 
+Small local-first prototype based on the supplied PYTHIA mockup and plans. It uses Node.js built-ins and SQLite; no account, API key, or external database is needed.
 
+## Run it
 
-## Getting started
+Requires Node.js 22.13 or newer.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://git.t1a.cloud/eugene.martyanov/odyssey-hakaton-out-of-scope.git
-git branch -M main
-git push -uf origin main
+```sh
+npm start
 ```
 
-## Integrate with your tools
+Open <http://localhost:3000>. The SQLite database is created at `data/pythia.db` on first launch and seeded with demo people, solutions, requests, and contribution history.
 
-* [Set up project integrations](https://git.t1a.cloud/eugene.martyanov/odyssey-hakaton-out-of-scope/-/settings/integrations)
+For a clean demo database, stop the application and run:
 
-## Collaborate with your team
+```sh
+npm run db:reset
+```
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+The command archives the previous SQLite files under `data/backups/`, then creates a fresh database from the current versioned seed. Start the application normally afterward.
 
-## Test and Deploy
+The MVP includes Oracle search/chat, a recurring Calendar Breather analysis loop with automatic tentative calendar holds and Accept/Decline responses, persisted run feedback and laurels, a simple share form, and views for Expertise, Discoveries (most common requests, gaps, solved and unsolved counts, skills and apps in the catalogue, filterable by period, with a browsable list of every problem and solution), and Pantheon. Oracle planning uses the configured OpenAI-compatible gateway with a local fallback. The Oracle analyzes the next seven days on a once-daily or once-weekly schedule. Users choose a Gentle, Balanced, or Extra room mode; PYTHIA chooses break count, placement, and 5/7/8/9/10/15-minute duration. Meeting sentiment analysis uses related calendar and email context, enabled by default in the planning form and easy to turn off. A previous-week replay is preview-only and never writes to Google Calendar. The scheduler runs while the local server is running.
 
-Use the built-in continuous integration in GitLab.
+Project documentation is collected in the [Documentation index](./Documentation/README.md). The implemented system design and search/data flow are documented in [the current architecture](./Documentation/Architecture/ARCHITECTURE.md); the [target architecture](./Documentation/Architecture/PYTHIA-architecture-and-logic.md) describes broader planned components.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+## Oracle LLM
 
-***
+Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See the [Oracle LLM setup guide](./Documentation/Setup/ORACLE-LLM-SETUP.md).
 
-# Editing this README
+Share Wisdom uses the same configured chat model to extract **areas of expertise**, experience, and reusable assets from a free-text contribution. An area of expertise is a human capability and never becomes a catalogue asset unless the message explicitly describes a created or used artifact/workflow and supplies supporting source evidence. Catalogue `skill` records are labelled **Playbook / Agent skill** in the UI. The contributor reviews and edits the draft before confirmation; confirmed profile data and catalogue assets are stored locally and indexed for Seek Wisdom. Shared catalogue agents are not executable until a runner integration is added.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+On first sign-in, a colleague can optionally describe their work in free text and use **Extract with Pythia** to draft role, team, areas of expertise, and experience. The draft is review-only until the profile form is submitted and never publishes catalogue solutions.
 
-## Suggestions for a good README
+## Signing in
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Every page and API call needs a session. The login page offers two ways in:
 
-## Name
-Choose a self-explaining name for your project.
+- **Sign in with Google** — company accounts only (`AUTH_ALLOWED_DOMAINS`, default `t1a.com`). It requests identity only (`openid email profile`); Calendar and Gmail are connected separately under Connections, and only for the account you signed in with. The first sign-in creates your profile and asks for your role and areas of expertise.
+- **Demo persona** (development login) — pick any seeded colleague. It is on while the Google credentials in `.env` are empty or when `AUTH_DEV_LOGIN=1`, and it is always off when `NODE_ENV=production`.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+The identity of the person making a request always comes from the session, never from the request body. Setup steps are in the [Google setup guide](./Documentation/Setup/GOOGLE-SETUP.md); the session model and API gating are described in the [current architecture](./Documentation/Architecture/ARCHITECTURE.md#authentication-and-sessions).
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Tests
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```sh
+npm test
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Node's built-in runner, no dependencies. The HTTP tests start the real server from a temporary copy of the sources, so the `data/` folder is never touched.
