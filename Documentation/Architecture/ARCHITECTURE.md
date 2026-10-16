@@ -96,7 +96,7 @@ The model cannot select arbitrary records. Returned solution and person IDs are 
 
 Structured-output validation also reconciles prose with IDs: if the answer explicitly names the exact role title of a retrieved colleague but omits that colleague from `peopleIds`, the server resolves that title locally and adds the validated candidate ID. This prevents an answer from recommending a role while the UI incorrectly reports that nobody was selected; records outside the retrieved set can never be added.
 
-The signed-in browser also receives the ordered IDs of the locally qualified colleague candidates. `People who can help` contains only the zero to three colleagues explicitly selected by Pythia. Any other candidates that passed the local relevance gate appear separately under `More possible matches`; neither control opens the full Expertise directory. Profile names and details are resolved from the already authorized local directory response and are still not included in the LLM prompt.
+The signed-in browser also receives the ordered IDs of the locally qualified colleague candidates. `Recommended Experts` contains only the zero to three colleagues explicitly selected by Pythia. Any other candidates that passed the local relevance gate appear separately under `Other potential matches`; that row is omitted when there are no additional candidates. Neither control opens the full Expertise directory. Profile names and details are resolved from the already authorized local directory response and are still not included in the LLM prompt.
 
 ## Share Wisdom flow
 
