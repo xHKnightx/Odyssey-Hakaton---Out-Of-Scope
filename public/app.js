@@ -249,15 +249,6 @@ function oracleRecommendation(result){
   return '';
 }
 
-function oracleWhy(result){
-  const rec=result.recommendation||{},retrieval=result.retrieval||{},items=[];
-  if(rec.reason)items.push(rec.reason);
-  if(retrieval.solutionCandidates)items.push(`${retrieval.solutionCandidates} relevant solution candidate${retrieval.solutionCandidates===1?' was':'s were'} checked.`);
-  if(retrieval.peopleCandidates)items.push(`${retrieval.peopleCandidates} expertise candidate${retrieval.peopleCandidates===1?' was':'s were'} compared locally.`);
-  if(rec.confidence)items.push(`Recommendation confidence: ${Math.round(rec.confidence)}%.`);
-  return items.slice(0,3).map(item=>`<li>${esc(item)}</li>`).join('');
-}
-
 function oracleFound(result){
   const rec=result.recommendation||{},retrieval=result.retrieval||{};
   return `<section class="oracle-found"><div class="oracle-found-head"><h2>What Pythia found</h2><span>Other paths, if the advice doesn’t fit</span></div><div class="found"><button class="frow" data-toast="Pythia ranked the closest catalogue matches for this request."><span class="frow-ic">◇</span><span class="grow"><span class="frow-t">Relevant solutions <b>${retrieval.solutionCandidates||0}</b></span><span class="frow-d">Ranked by semantic similarity and exact search</span></span><span class="frow-go">›</span></button><button class="frow" data-view="expertise"><span class="frow-ic">◎</span><span class="grow"><span class="frow-t">People who can help <b>${retrieval.peopleCandidates||result.people?.length||0}</b></span><span class="frow-d">Areas of expertise, role, team, and experience were compared</span></span><span class="frow-go">›</span></button>${rec.type==='build'?'<button class="frow" data-action="share"><span class="frow-ic">⬡</span><span class="grow"><span class="frow-t">Build something new</span><span class="frow-d">Save the proposed playbook or agent as an offering</span></span><span class="frow-go">›</span></button>':''}</div></section>`;
@@ -272,7 +263,7 @@ function renderOracleConversation(waiting=false){
   }
   const message=[...oracleMessages].reverse().find(item=>item.role==='assistant'),result=message?.result;
   if(!result){thread.innerHTML=`<button class="seek-back" type="button" data-seek-followup>← Try again</button><section class="oracle-card error"><div class="oracle-card-head"><div class="oracle-emblem">!</div><div class="eyebrow">THE ORACLE COULD NOT ANSWER</div></div><h1>Let’s try that once more.</h1><p class="oracle-answer">${esc(message?.content||'Something went wrong.')}</p></section>`;return;}
-  thread.innerHTML=`<details class="oracle-request"><summary><span>YOUR REQUEST</span><q>${esc(question)}</q><b>⌄</b></summary><div><p>${esc(question)}</p><button class="seek-back" type="button" data-change-request>Edit request</button></div></details><section class="oracle-card"><div class="oracle-card-head"><div class="oracle-emblem">♜</div><div class="eyebrow">THE ORACLE HAS SPOKEN</div></div><h1>${esc(oracleVerdict(result))}</h1><p class="oracle-answer">${esc(result.answer).replace(/\n/g,'<br>')}</p>${oracleRecommendation(result)}<ul class="oracle-why">${oracleWhy(result)}</ul></section>${oracleFound(result)}<div class="oracle-followup"><div><div class="eyebrow">KEEP THE CONVERSATION GOING</div><p>Pythia remembers this request and the recommendation.</p></div><button class="button gold" type="button" data-seek-followup>Ask a follow-up →</button><button class="button" type="button" data-seek-home>New request</button></div>`;
+  thread.innerHTML=`<details class="oracle-request"><summary><span>YOUR REQUEST</span><q>${esc(question)}</q><b>⌄</b></summary><div><p>${esc(question)}</p><button class="seek-back" type="button" data-change-request>Edit request</button></div></details><section class="oracle-card"><div class="oracle-card-head"><div class="oracle-emblem">♜</div><div class="eyebrow">THE ORACLE HAS SPOKEN</div></div><h1>${esc(oracleVerdict(result))}</h1><p class="oracle-answer">${esc(result.answer).replace(/\n/g,'<br>')}</p>${oracleRecommendation(result)}</section>${oracleFound(result)}<div class="oracle-followup"><div><div class="eyebrow">KEEP THE CONVERSATION GOING</div><p>Pythia remembers this request and the recommendation.</p></div><button class="button gold" type="button" data-seek-followup>Ask a follow-up →</button><button class="button" type="button" data-seek-home>New request</button></div>`;
 }
 
 function personDetail(id){
