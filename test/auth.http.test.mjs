@@ -88,6 +88,45 @@ describe('authentication gate (dev login enabled)', () => {
     assert.equal((await stranger.request('/api/calendar/invites', { method: 'POST', json: { runId, proposalIds: [1] } })).status, 403);
   });
 
+  it('rejects oversized, malformed and non-object request bodies with a 4xx', async () => {
+    const { client } = await signInAs(app, 'Mia Novak');
+    const huge = await client.request('/api/seek', { method: 'POST', json: { text: 'x'.repeat(400_000) } });
+    assert.equal(huge.status, 413);
+    assert.equal((await client.request('/api/seek', { method: 'POST', json: { text: 'x'.repeat(4001) } })).status, 400);
+    assert.equal((await client.request('/api/seek', { method: 'POST', json: { text: 'calendar' } })).status, 200);
+    for (const raw of ['{not json', '[1,2]', 'null', '"text"']) {
+      const response = await client.request('/api/seek', { method: 'POST', body: raw });
+      assert.equal(response.status, 400, raw);
+      assert.deepEqual(Object.keys(response.json()), ['error']);
+    }
+  });
+
+  it('answers 400 for a malformed path and falls back for odd Discoveries periods', async () => {
+    const { client } = await signInAs(app, 'Mia Novak');
+    assert.equal((await client.request('/%')).status, 400);
+    for (const period of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+      const response = await client.request(`/api/discoveries?period=${period}`);
+      assert.equal(response.status, 200, period);
+      assert.equal(response.json().period, '30d');
+    }
+  });
+
+  it('only attaches a run to the runner\'s own request, and validates the time zone', async () => {
+    const owner = await signInAs(app, 'Daniel Ortiz');
+    const other = await signInAs(app, 'Mia Novak');
+    const { solutions } = (await owner.client.request('/api/overview')).json();
+    const solution = solutions.find(item => item.runnable);
+    const theirs = (await other.client.request('/api/seek', { method: 'POST', json: { text: 'a private question about my calendar' } })).json().requestId;
+    const mine = (await owner.client.request('/api/seek', { method: 'POST', json: { text: 'my own question about meetings' } })).json().requestId;
+    for (const requestId of [theirs, 999_999, 'abc']) {
+      assert.equal((await owner.client.request('/api/run', { method: 'POST', json: { solutionId: solution.id, requestId } })).status, 403, String(requestId));
+    }
+    assert.equal((await owner.client.request('/api/run', { method: 'POST', json: { solutionId: solution.id, requestId: mine } })).status, 200);
+    assert.equal((await owner.client.request('/api/run', { method: 'POST', json: { solutionId: solution.id } })).status, 200);
+    const zone = await owner.client.request('/api/calendar/analysis', { method: 'POST', json: { timeZone: 'Mars/Olympus' } });
+    assert.equal(zone.status, 400);
+  });
+
   it('blocks cross-site state changes', async () => {
     const { client } = await signInAs(app, 'Mia Novak');
     const body = { text: 'calendar' };

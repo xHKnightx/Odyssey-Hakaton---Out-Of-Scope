@@ -149,8 +149,36 @@ if (!one('SELECT value FROM app_meta WHERE key=?','gamification_bootstrap_dedupe
 }
 
 const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
-const json = (res, code, value) => { res.writeHead(code, { 'content-type':'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
-async function body(req) { let raw=''; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; }
+const json = (res, code, value, headers = {}) => { res.writeHead(code, { 'content-type':'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(value)); };
+class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+const MAX_JSON_BYTES = 256 * 1024;
+async function body(req, maxBytes=MAX_JSON_BYTES) {
+  if(Number(req.headers['content-length'])>maxBytes)throw new HttpError(413,'Request is too large.');
+  const chunks=[];let size=0;
+  for await (const chunk of req) {
+    size+=chunk.length;
+    if(size>maxBytes)throw new HttpError(413,'Request is too large.');
+    chunks.push(chunk);
+  }
+  const raw=Buffer.concat(chunks).toString('utf8');
+  if(!raw)return {};
+  let parsed;
+  try{parsed=JSON.parse(raw)}catch{throw new HttpError(400,'Request body must be valid JSON.')}
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new HttpError(400,'Request body must be a JSON object.');
+  return parsed;
+}
+// Errors raised by our own code or by Google/the LLM carry a readable message; programming errors must not leak internals.
+const upstreamFailure=(res,error)=>{
+  if(error instanceof HttpError)throw error;
+  console.error('Upstream request failed:',error);
+  const internal=[TypeError,RangeError,ReferenceError,SyntaxError].some(type=>error instanceof type);
+  return json(res,502,{error:internal?'The request could not be completed. Try again.':error.message});
+};
+const timeZoneOf=input=>{
+  const zone=String(input.timeZone||'UTC');
+  try{new Intl.DateTimeFormat('en',{timeZone:zone})}catch{throw new HttpError(400,'Choose a valid time zone.')}
+  return zone;
+};
 async function binaryBody(req, maxBytes=12*1024*1024) {
   const chunks=[];let size=0;
   for await (const chunk of req) {
@@ -247,7 +275,7 @@ async function tickCalendarAutomation(){
 }
 
 async function route(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const url = new URL(req.url, 'http://localhost');
   if (req.method === 'GET' && url.pathname === '/auth/google') {
     if (!googleConfigured()) return redirect(res, '/?connect=missing#connections');
     const state = randomBytes(32).toString('hex');
@@ -333,7 +361,7 @@ async function route(req, res) {
     }
     if (req.method === 'GET' && url.pathname === '/api/discoveries') {
       const period=url.searchParams.get('period');
-      return json(res,200,discoveriesFor(db,{period:period in PERIODS?period:DEFAULT_PERIOD,viewerId:resolveUserId()}));
+      return json(res,200,discoveriesFor(db,{period:Object.hasOwn(PERIODS,period)?period:DEFAULT_PERIOD,viewerId:resolveUserId()}));
     }
     if (req.method === 'GET' && url.pathname === '/api/overview') {
       const activeUserId=resolveUserId(url.searchParams.get('userId'));
@@ -392,8 +420,8 @@ async function route(req, res) {
     if (req.method === 'POST' && url.pathname === '/api/calendar/analysis') {
       try {
         const b=await body(req), days=Math.min(10,Math.max(1,Number(b.days)||5)), lookback=Math.min(90,Math.max(1,Number(b.lookback)||30));
-        return json(res,200,await analyzeCalendar({days,lookback,timeZone:String(b.timeZone||'UTC')}));
-      } catch(error) { return json(res,502,{error:error.message}); }
+        return json(res,200,await analyzeCalendar({days,lookback,timeZone:timeZoneOf(b)}));
+      } catch(error) { return upstreamFailure(res,error); }
     }
     if(req.method==='POST'&&url.pathname==='/api/calendar/preview-week'){
       const b=await body(req),user=currentUser();
@@ -402,10 +430,10 @@ async function route(req, res) {
       if(!await readGoogleToken())return json(res,409,{error:'Connect your Google account in Connections before previewing a week.'});
       let preferences;try{preferences=normalizeBreakPreferences(b.preferences||{})}catch(error){return json(res,400,{error:error.message})}
       try{
-        const timeZone=String(b.timeZone||'UTC'),range=calendarWeekRange('previous',timeZone);
+        const timeZone=timeZoneOf(b),range=calendarWeekRange('previous',timeZone);
         const result=await planCalendarForUser(user,{preferences,includeMeetingContext:b.includeMeetingContext===true,timeZone,days:7,dryRun:true,rangeStart:range.start,rangeEnd:range.end});
         return json(res,200,result);
-      }catch(error){return json(res,502,{error:error.message})}
+      }catch(error){return upstreamFailure(res,error)}
     }
     if(req.method==='GET'&&url.pathname==='/api/calendar/preferences'){
       const userId=currentUser()?.id,stored=one('SELECT preferences,updated_at FROM calendar_preferences WHERE user_id=?',userId);
@@ -434,13 +462,13 @@ async function route(req, res) {
       catch(error){return json(res,400,{error:error.message})}
       try{
         const includeMeetingContext=b.includeMeetingContext===true;
-        const result=await planCalendarForUser(user,{preferences,includeMeetingContext,timeZone:String(b.timeZone||'UTC'),days:7});
+        const result=await planCalendarForUser(user,{preferences,includeMeetingContext,timeZone:timeZoneOf(b),days:7});
         if(result.proposals.length&&result.proposals.every(item=>item.invitationStatus==='failed'))throw new Error(result.proposals[0].invitationError||'Google Calendar could not create a tentative hold.');
         const nextRun=new Date(Date.now()+automationIntervalMs(preferences.cadence)).toISOString();
         db.prepare(`INSERT INTO calendar_automation_jobs(user_id,enabled,cadence,runs_per_day,time_zone,include_context,next_run_at,last_run_at,last_error,updated_at)
           VALUES(?,1,?,1,?,?,?,?,NULL,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET enabled=1,cadence=excluded.cadence,runs_per_day=1,time_zone=excluded.time_zone,include_context=excluded.include_context,next_run_at=excluded.next_run_at,last_run_at=excluded.last_run_at,last_error=NULL,updated_at=CURRENT_TIMESTAMP`).run(user.id,preferences.cadence,result.timeZone,includeMeetingContext?1:0,nextRun,new Date().toISOString());
         return json(res,200,{...result,automation:{enabled:true,cadence:preferences.cadence,nextRunAt:nextRun}});
-      }catch(error){return json(res,502,{error:error.message})}
+      }catch(error){return upstreamFailure(res,error)}
     }
     if(req.method==='GET'&&url.pathname==='/api/calendar/pending'){
       const userId=currentUser()?.id;
@@ -462,7 +490,7 @@ async function route(req, res) {
           db.prepare("UPDATE calendar_proposals SET status='declined' WHERE id=?").run(id);
         }
         return json(res,200,{ok:true,action,id});
-      }catch(error){return json(res,502,{error:error.message})}
+      }catch(error){return upstreamFailure(res,error)}
     }
     if(req.method==='GET'&&url.pathname==='/api/calendar/recurring'){
       const userId=currentUser()?.id;
@@ -476,7 +504,7 @@ async function route(req, res) {
         WHERE p.id=? AND r.user_id=? AND p.status='created' AND p.recurrence_rule IS NOT NULL`,id,userId);
       if(!plan)return json(res,404,{error:'Recurring break not found.'});
       try{await googleApi(`/calendar/v3/calendars/primary/events/${encodeURIComponent(plan.external_event_id)}`,{method:'DELETE'});db.prepare("UPDATE calendar_proposals SET status='cancelled' WHERE id=?").run(id);return json(res,200,{ok:true})}
-      catch(error){return json(res,502,{error:error.message})}
+      catch(error){return upstreamFailure(res,error)}
     }
     if (req.method === 'POST' && url.pathname === '/api/calendar/invites') {
       try {
@@ -507,10 +535,10 @@ async function route(req, res) {
           created.push({id:p.id,eventId:external.id,htmlLink:external.htmlLink||'',recurring:Boolean(recurrenceRule),occurrences:recurrenceRule?occurrences:1});
         }
         return json(res,200,{created,calendar:'primary'});
-      } catch(error) { return json(res,502,{error:error.message}); }
+      } catch(error) { return upstreamFailure(res,error); }
     }
     if (req.method === 'POST' && url.pathname === '/api/seek') {
-      const b = await body(req),userId=resolveUserId(b.userId); const text = String(b.text || '').trim(); if(!userId)return json(res,400,{error:'A valid profile is required.'}); if (!text) return json(res,400,{error:'Enter a question first.'});
+      const b = await body(req),userId=resolveUserId(b.userId); const text = String(b.text || '').trim(); if(!userId)return json(res,400,{error:'A valid profile is required.'}); if (!text) return json(res,400,{error:'Enter a question first.'}); if (text.length>4000) return json(res,400,{error:'Keep the question under 4,000 characters.'});
       const inserted = db.prepare('INSERT INTO requests(text,user_id) VALUES(?,?)').run(text,userId);
       const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>3);
       const candidates = all('SELECT s.*,u.name owner FROM solutions s JOIN users u ON u.id=s.owner_id');
@@ -522,12 +550,14 @@ async function route(req, res) {
     }
     if (req.method === 'POST' && url.pathname === '/api/run') {
       const b=await body(req),userId=resolveUserId(b.userId); if(!userId)return json(res,400,{error:'A valid profile is required.'}); const s=one('SELECT * FROM solutions WHERE id=? AND runnable=1',Number(b.solutionId)); if(!s) return json(res,404,{error:'Runnable solution not found.'});
+      const requestId=b.requestId==null?null:Number(b.requestId);
+      if(requestId!==null&&!one('SELECT id FROM requests WHERE id=? AND user_id=?',requestId,userId))return json(res,403,{error:'That request is not yours.'});
       const connected=Boolean(await readGoogleToken());
       let result;
-      try { result=connected?await analyzeCalendar({days:5,lookback:30,timeZone:String(b.timeZone||'UTC')}):makeDemoCalendar(); }
-      catch(error) { return json(res,502,{error:error.message}); }
+      try { result=connected?await analyzeCalendar({days:5,lookback:30,timeZone:timeZoneOf(b)}):makeDemoCalendar(); }
+      catch(error) { return upstreamFailure(res,error); }
       const summary=JSON.stringify({source:result.source,meetingCount:result.meetingCount,emailCount:result.emailCount,proposalCount:result.proposals.length});
-      const ins=db.prepare('INSERT INTO runs(solution_id,user_id,request_id,result) VALUES(?,?,?,?)').run(s.id,userId,b.requestId||null,summary);
+      const ins=db.prepare('INSERT INTO runs(solution_id,user_id,request_id,result) VALUES(?,?,?,?)').run(s.id,userId,requestId,summary);
       if(connected) for(const p of result.proposals){
         const proposal=db.prepare('INSERT INTO calendar_proposals(run_id,start_at,end_at,timezone,title,reason) VALUES(?,?,?,?,?,?)').run(Number(ins.lastInsertRowid),p.start,p.end,p.timeZone,p.title,p.reason);
         p.id=Number(proposal.lastInsertRowid);
@@ -583,7 +613,9 @@ async function route(req, res) {
     console.warn(`Unmatched API route: ${req.method} ${url.pathname}`);
     return json(res,404,{error:'API route not found.',method:req.method,path:url.pathname});
   }
-  const rel=normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '') || 'index.html';
+  let decoded;
+  try{decoded=decodeURIComponent(url.pathname)}catch{return json(res,400,{error:'Bad request path.'})}
+  const rel=normalize(decoded).replace(/^([/\\])+/, '') || 'index.html';
   if(rel.includes('..')) return json(res,403,{error:'Forbidden'});
   const path=join(root,'public',rel);
   if(!existsSync(path)) return json(res,404,{error:'Not found'});
@@ -601,7 +633,11 @@ if (process.env.PYTHIA_INIT_ONLY === '1') {
   } catch(error) {
     console.error(`Embedding backfill failed; exact local search remains available: ${error.message}`);
   }
-  const server=createServer((req,res)=>auth.handle(req,res,()=>route(req,res)).catch(err=>{console.error(err);json(res,500,{error:'Something went wrong.'});}));
+  const server=createServer((req,res)=>auth.handle(req,res,()=>route(req,res)).catch(err=>{
+    if(res.headersSent)return res.end();
+    if(err instanceof HttpError)return json(res,err.status,{error:err.message},err.status===413?{connection:'close'}:{});
+    console.error(err);json(res,500,{error:'Something went wrong.'});
+  }));
   server.listen(port,'127.0.0.1',()=>{console.log(`PYTHIA running at http://localhost:${port}`);tickCalendarAutomation()});
   const automationTimer=setInterval(tickCalendarAutomation,60_000);automationTimer.unref();
 }
