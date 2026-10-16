@@ -160,6 +160,38 @@ describe('buildDiscoveries', () => {
     assert.ok(group.examples.length === 2 && group.examples.every(text => !/\p{Script=Cyrillic}/u.test(text)));
   });
 
+  it('lists every group and every catalogue solution with its demand', () => {
+    const requests = [
+      solved('Back-to-back meetings all day', 1, 1),
+      solved('No time to think between calls', 2, 1),
+      solved('Clause extraction from PDF contracts', 3, 2),
+      request('Onboarding plan for a new analyst', 1),
+      request('Who can review my Power BI model?', 2, { outcome: 'person' })
+    ];
+    const runs = [{ request_id: requests[0].id, feedback: 'helped' }];
+    const result = buildDiscoveries({ requests, solutions, people, runs, now: NOW });
+    assert.equal(result.problems.length, 4);
+    assert.ok(result.problems.length >= result.topRequests.length);
+    assert.deepEqual(result.problems.slice(0, result.topRequests.length).map(item => item.title), result.topRequests.map(item => item.title));
+    assert.deepEqual(result.solutions.map(item => item.title), ['Calendar Breather', 'Contract Clause Extractor', 'Access Request Helper', 'Data Platform Runbooks', 'SAP Export Cleaner']);
+    assert.deepEqual(result.solutions.map(item => [item.requests, item.askers, item.confirmed]), [[2, 2, 1], [1, 1, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]);
+    assert.deepEqual(result.solutions[0], { id: 1, title: 'Calendar Breather', kind: 'agent', runnable: true, summary: '', requests: 2, askers: 2, confirmed: 1 });
+    assert.doesNotMatch(JSON.stringify(result), /user_?id|userId/);
+  });
+
+  it('only offers a topic to prefill when wording may be shown', () => {
+    const quoted = ['Reuse earlier RFP answers for a new questionnaire', 'Answer security questionnaires from earlier RFP responses', 'Compile RFP questionnaire answers from earlier responses']
+      .map((text, index) => request(text, index + 1));
+    const [group] = buildDiscoveries({ requests: quoted, solutions, people, now: NOW, viewerId: 9 }).problems;
+    assert.deepEqual([group.withheld, group.topic === '' ? 'none' : 'text'], [false, 'text']);
+    const small = buildDiscoveries({ requests: quoted.slice(0, 2), solutions, people, now: NOW, viewerId: 9 }).problems[0];
+    assert.deepEqual([small.withheld, small.topic], [true, '']);
+    const own = buildDiscoveries({ requests: [request('Totally unique question about forklift certification', 7)], solutions, people, now: NOW, viewerId: 7 }).problems[0];
+    assert.deepEqual([own.withheld, own.topic], [false, '']);
+    const answered = buildDiscoveries({ requests: [solved('Back-to-back meetings all day', 1, 1)], solutions, people, now: NOW, viewerId: 9 }).problems[0];
+    assert.deepEqual([answered.withheld, answered.topic], [false, '']);
+  });
+
   it('reports confirmed help from runs rated "helped"', () => {
     const requests = [solved('Calendar help please', 1, 1, { id: 100 }), solved('More calendar help', 2, 1, { id: 101 })];
     const runs = [{ request_id: 100, feedback: 'helped' }, { request_id: 101, feedback: 'no' }, { request_id: null, feedback: 'helped' }];
@@ -332,6 +364,12 @@ describe('GET /api/discoveries', () => {
     assert.ok(all.totals.requests >= 300 && all.totals.confirmed > 0);
     assert.ok(all.totals.solvedShare >= 70 && all.totals.solvedShare <= 90);
     assert.ok(all.catalogue.skills >= 2 && all.catalogue.apps >= 4);
+    assert.equal(all.solutions.length, all.catalogue.skills + all.catalogue.apps + all.catalogue.knowledge);
+    assert.ok(all.solutions.length >= all.catalogue.skills + all.catalogue.apps);
+    assert.equal(all.solutions[0].title, 'Calendar Breather');
+    assert.ok(all.solutions.every(item => item.requests >= 0 && Number.isInteger(item.id)));
+    assert.ok(all.problems.length > all.topRequests.length && all.problems.length <= 200);
+    assert.ok(all.problems.every(item => item.withheld === (item.title === 'Topic withheld for privacy')));
     assert.doesNotMatch(JSON.stringify(all), /user_?id|userId|Priya|Daniel Ortiz/);
   });
 

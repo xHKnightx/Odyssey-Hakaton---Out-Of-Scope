@@ -1,6 +1,12 @@
 const $ = s => document.querySelector(s);
 let data=null, googleState=null, oracleState=null, currentRun=null, currentCalendarPlan=null, pendingCalendarRun=null, calendarPlanMessages=[], activeFilter='All', period='q', toastTimer, activeUserId=Number(localStorage.getItem('pythia-demo-user'))||1;
 let oracleMessages=[],wisdomDraft=null,wisdomText='';
+// Entry points for other pages (Discoveries) into the Oracle and the catalogue.
+window.pythiaActions={
+  ask(text){oracleMessages=[];wisdomDraft=null;wisdomText='';$('#seek-question-title').textContent='What do you seek?';$('#question').placeholder='e.g. I spend two days every month matching supplier invoices to contracts…';$('#question').value=text||'';view('seek');showSeekState('consult')},
+  share(text){oracleMessages=[];wisdomDraft=null;wisdomText='';$('#share-text').value=text||'';view('seek');showSeekState('share-consult')},
+  showSolution(id){oracleMessages=[];view('seek');showSeekState('home');setTimeout(()=>{const card=document.getElementById(`solution-${id}`);if(!card)return;card.scrollIntoView({behavior:'smooth',block:'center'});card.classList.add('flash');setTimeout(()=>card.classList.remove('flash'),2400)},120)}
+};
 const esc = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const solutionKindLabel = kind => String(kind||'').toLowerCase()==='skill'?'playbook / agent skill':String(kind||'');
 async function api(path, options={}) {
@@ -129,7 +135,7 @@ function avatar(person,size=''){return `<span class="av ${size}" style="backgrou
 function iconLaurel(){let leaves='';for(let i=0;i<9;i++){const d=255-i*15,a=d*Math.PI/180,r=i%2?52:46,x=60+r*Math.cos(a),y=60-r*Math.sin(a),rot=-d+90+(i%2?-28:28);leaves+=`<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="8.5" ry="3.4" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})"/>`}return `<svg class="laurel-svg" viewBox="0 0 120 120" fill="currentColor"><g>${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g><g transform="translate(120 0) scale(-1 1)">${leaves}<path d="M47.6 106.4A49 49 0 0 1 22 22" fill="none" stroke="currentColor" stroke-width="1.6"/></g></svg>`}
 
 function renderSolutions(){
-  $('#solutions').innerHTML=data.solutions.map(s=>`<article class="card"><div class="kind">${esc(solutionKindLabel(s.kind))}${s.runnable?' · RUNNABLE':''}</div><h3>${esc(s.title)}</h3><p>${esc(s.summary)}</p><div class="card-foot"><span>By ${esc(s.owner)} · ~${s.minutes_saved} min saved</span>${s.runnable?`<button data-run="${s.id}">Try it →</button>`:''}</div></article>`).join('');
+  $('#solutions').innerHTML=data.solutions.map(s=>`<article class="card" id="solution-${s.id}"><div class="kind">${esc(solutionKindLabel(s.kind))}${s.runnable?' · RUNNABLE':''}</div><h3>${esc(s.title)}</h3><p>${esc(s.summary)}</p><div class="card-foot"><span>By ${esc(s.owner)} · ~${s.minutes_saved} min saved</span>${s.runnable?`<button data-run="${s.id}">Try it →</button>`:''}</div></article>`).join('');
 }
 const expertiseKey=value=>String(value||'').normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleLowerCase('en');
 const personExpertise=person=>String(person.skills||'').split(',').map(value=>value.normalize('NFKC').replace(/\s+/g,' ').trim()).filter(Boolean);
