@@ -19,8 +19,13 @@ let activeRecognition=null,activeRecorder=null,activeVoiceStream=null,activeVoic
 function renderComposerActions(){
   document.querySelectorAll('[data-composer-actions]').forEach(bar=>{
     const target=bar.dataset.composerActions,label=bar.dataset.submitLabel,title=bar.dataset.voiceTitle;
-    bar.innerHTML=`<button class="voice-button" type="button" data-voice-target="${esc(target)}" aria-label="Start voice input" aria-pressed="false" title="${esc(title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-6 9a6 6 0 0 0 12 0M12 18v3M9 21h6"/></svg></button><button class="button gold" type="submit">${esc(label)} <span>→</span></button>`;
+    bar.innerHTML=`<button class="voice-button" type="button" data-voice-target="${esc(target)}" aria-label="Start voice input" aria-pressed="false" title="${esc(title)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-6 9a6 6 0 0 0 12 0M12 18v3M9 21h6"/></svg></button><span class="voice-status" aria-live="polite" hidden><i aria-hidden="true"></i><span></span></span><button class="button gold" type="submit">${esc(label)} <span>→</span></button>`;
   });
+}
+function setVoiceStatus(button,text='',state=''){
+  const status=button?.parentElement?.querySelector('.voice-status');if(!status)return;
+  status.hidden=!text;status.className=`voice-status${state?` ${state}`:''}`;
+  status.querySelector('span').textContent=text;
 }
 function renderReturnControls(){
   const states=['#seek-consult','#share-consult','#seek-results','#share-results'];
@@ -39,6 +44,7 @@ function resetVoiceInput(){
   clearTimeout(voiceStopTimer);voiceStopTimer=null;
   if(activeVoiceStream){for(const track of activeVoiceStream.getTracks())track.stop()}
   if(activeVoiceButton){
+    setVoiceStatus(activeVoiceButton);
     activeVoiceButton.classList.remove('listening','transcribing');
     activeVoiceButton.disabled=false;
     activeVoiceButton.setAttribute('aria-pressed','false');
@@ -56,6 +62,7 @@ function startBrowserSpeech(button,input,base){
   recognition.continuous=true;recognition.interimResults=true;recognition.lang=navigator.language||'en-US';
   recognition.onstart=()=>{
     activeRecognition=recognition;activeVoiceButton=button;
+    setVoiceStatus(button,'Recording…','recording');
     button.classList.add('listening');button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Stop voice input');
   };
   recognition.onresult=event=>{
@@ -83,6 +90,7 @@ async function startRecordedVoice(button,input,base){
   activeRecorder=recorder;activeVoiceStream=stream;activeVoiceButton=button;discardRecording=false;
   recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data)};
   recorder.onstart=()=>{
+    setVoiceStatus(button,'Recording…','recording');
     button.classList.add('listening');button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Stop and transcribe voice input');
     voiceStopTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop()},60_000);
   };
@@ -92,6 +100,7 @@ async function startRecordedVoice(button,input,base){
     clearTimeout(voiceStopTimer);voiceStopTimer=null;
     for(const track of stream.getTracks())track.stop();
     activeRecorder=null;activeVoiceStream=null;
+    setVoiceStatus(button,'Transcribing…','transcribing');
     button.classList.remove('listening');button.classList.add('transcribing');button.disabled=true;button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Transcribing voice input');
     if(discard){resetVoiceInput();return}
     try{

@@ -19,7 +19,15 @@
 .voice-button.listening{border-color:var(--terra);background:rgba(200,100,59,.14);color:#e18a67;box-shadow:0 0 0 4px rgba(200,100,59,.08)}
 .voice-button.transcribing{border-color:var(--gold);background:var(--gold-dim);color:var(--gold);animation:voice-pulse .9s ease-in-out infinite alternate}
 .voice-button:disabled{cursor:not-allowed;opacity:.35}
+.voice-status{display:inline-flex;align-items:center;gap:7px;min-height:24px;padding:4px 8px 4px 7px;border:1px solid var(--line);border-radius:999px;background:rgba(5,8,13,.45);color:var(--fg2);font:500 9px var(--mono);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.voice-status[hidden]{display:none}
+.voice-status i{width:7px;height:7px;flex:none;border-radius:50%;background:var(--gold)}
+.voice-status.recording{color:#e6a68c}
+.voice-status.recording i{background:var(--terra);box-shadow:0 0 0 0 rgba(200,100,59,.45);animation:voice-status-recording 1.25s ease-out infinite}
+.voice-status.transcribing i{animation:voice-status-transcribing .75s ease-in-out infinite alternate}
 @keyframes voice-pulse{to{box-shadow:0 0 0 5px rgba(212,168,85,.1)}}
+@keyframes voice-status-recording{70%{box-shadow:0 0 0 5px rgba(200,100,59,0)}100%{box-shadow:0 0 0 0 rgba(200,100,59,0)}}
+@keyframes voice-status-transcribing{to{opacity:.25;transform:scale(.72)}}
 .seek-samples{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:18px;color:var(--fg3);font-size:12px}
 .seek-samples button{padding:7px 11px;border:1px dashed var(--line2);border-radius:2px;background:transparent;color:var(--fg2);font-size:12px}
 .seek-samples button:hover{border-style:solid;border-color:var(--gold);color:var(--gold)}
