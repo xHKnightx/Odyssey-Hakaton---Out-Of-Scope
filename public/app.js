@@ -254,9 +254,11 @@ function oracleFound(result){
   const rec=result.recommendation||{},retrieval=result.retrieval||{};
   const recommendedIds=(result.people||[]).map(person=>Number(person.id));
   const possibleIds=(result.candidatePeopleIds||[]).map(Number).filter(id=>!recommendedIds.includes(id));
+  const solutionCount=(result.candidateSolutions||[]).length||Number(retrieval.solutionCandidates)||0;
+  const solutionRow=solutionCount?`<button class="frow" data-oracle-solutions><span class="frow-ic">◇</span><span class="grow"><span class="frow-t">Relevant solutions <b>${solutionCount}</b></span><span class="frow-d">Solutions that closely match your request</span></span><span class="frow-go">›</span></button>`:'';
   const peopleRow=recommendedIds.length?`<button class="frow" data-oracle-people="recommended"><span class="frow-ic">◎</span><span class="grow"><span class="frow-t">Recommended Experts <b>${recommendedIds.length}</b></span><span class="frow-d">People best suited to help with your request</span></span><span class="frow-go">›</span></button>`:`<div class="frow oracle-empty"><span class="frow-ic">◎</span><span class="grow"><span class="frow-t">No strong people match</span><span class="frow-d">Pythia did not identify a colleague to recommend directly</span></span></div>`;
   const possibleRow=possibleIds.length?`<button class="frow" data-oracle-people="possible"><span class="frow-ic">○</span><span class="grow"><span class="frow-t">Other potential matches <b>${possibleIds.length}</b></span><span class="frow-d">Other people who might be able to help</span></span><span class="frow-go">›</span></button>`:'';
-  return `<section class="oracle-found"><div class="oracle-found-head"><h2>What Pythia found</h2></div><div class="found"><button class="frow" data-toast="Pythia ranked the closest catalogue matches for this request."><span class="frow-ic">◇</span><span class="grow"><span class="frow-t">Relevant solutions <b>${retrieval.solutionCandidates||0}</b></span><span class="frow-d">Ranked by semantic similarity and exact search</span></span><span class="frow-go">›</span></button>${peopleRow}${possibleRow}${rec.type==='build'?'<button class="frow" data-action="share"><span class="frow-ic">⬡</span><span class="grow"><span class="frow-t">Build something new</span><span class="frow-d">Save the proposed playbook or agent as an offering</span></span><span class="frow-go">›</span></button>':''}</div></section>`;
+  return `<section class="oracle-found"><div class="oracle-found-head"><h2>What Pythia found</h2></div><div class="found">${solutionRow}${peopleRow}${possibleRow}${rec.type==='build'?'<button class="frow" data-action="share"><span class="frow-ic">⬡</span><span class="grow"><span class="frow-t">Build something new</span><span class="frow-d">Save the proposed playbook or agent as an offering</span></span><span class="frow-go">›</span></button>':''}</div></section>`;
 }
 
 function renderOracleConversation(waiting=false){
@@ -285,6 +287,14 @@ function showOraclePeople(result,group='recommended'){
   if(!people.length){toast('No matching colleagues were found for this request.');return}
   const possible=group==='possible';
   $('#person-dialog-content').innerHTML=`<button class="close" type="button" data-close-person aria-label="Close">×</button><div class="eyebrow">MATCHED FOR THIS REQUEST</div><h2>${possible?'Other potential matches':'Recommended Experts'}</h2><p class="oracle-people-intro">${possible?'Other people who might be able to help.':'People best suited to help with your request.'}</p><div class="oracle-people-list">${people.map((person,index)=>`<button type="button" class="oracle-person-candidate" data-person="${person.id}" aria-label="View ${esc(person.name)}’s profile"><span class="oracle-person-rank">${index+1}</span>${avatar(person)}<span class="person-main"><b>${esc(person.name)}</b><small>${esc(person.title)} · ${esc(person.team)}</small><span class="oracle-person-skills">${personExpertise(person).slice(0,4).map(area=>`<span class="chip">${esc(area)}</span>`).join('')}</span></span></button>`).join('')}</div>`;
+  if(!$('#person-dialog').open)$('#person-dialog').showModal();
+}
+
+function showOracleSolutions(result){
+  const solutions=result?.candidateSolutions||[];
+  if(!solutions.length){toast('No relevant catalogue solutions were found for this request.');return}
+  const recommendedId=Number(result?.solution?.id);
+  $('#person-dialog-content').innerHTML=`<button class="close" type="button" data-close-person aria-label="Close">×</button><div class="eyebrow">MATCHED FOR THIS REQUEST</div><h2>Relevant solutions</h2><p class="oracle-people-intro">Solutions that closely match your request.</p><div class="oracle-solution-list">${solutions.map((solution,index)=>`<article class="oracle-solution-candidate"><span class="oracle-person-rank">${index+1}</span><span class="oracle-solution-main"><span class="kind">${esc(solutionKindLabel(solution.kind))}${solution.runnable?' · RUNNABLE':''}</span><b>${esc(solution.title)}</b><small>${esc(solution.summary)}</small>${Number(solution.id)===recommendedId?'<em>Recommended by Pythia</em>':''}</span>${solution.runnable?`<button class="button gold" type="button" data-run="${solution.id}" data-request="${result.requestId}">Run →</button>`:''}</article>`).join('')}</div>`;
   if(!$('#person-dialog').open)$('#person-dialog').showModal();
 }
 
@@ -331,12 +341,13 @@ document.addEventListener('click',async event=>{
   if(event.target.closest('[data-seek-followup]')){$('#seek-question-title').textContent='What else would you like to know?';$('#question').placeholder='Ask a follow-up about this recommendation…';showSeekState('consult');return}
   if(event.target.closest('[data-change-request]')){const previous=[...oracleMessages].reverse().find(message=>message.role==='user')?.content||'';oracleMessages=[];$('#seek-question-title').textContent='What do you seek?';$('#question').value=previous;showSeekState('consult');return}
   const oraclePeople=event.target.closest('[data-oracle-people]');if(oraclePeople){const result=[...oracleMessages].reverse().find(message=>message.role==='assistant')?.result;showOraclePeople(result,oraclePeople.dataset.oraclePeople);return}
+  if(event.target.closest('[data-oracle-solutions]')){const result=[...oracleMessages].reverse().find(message=>message.role==='assistant')?.result;showOracleSolutions(result);return}
   const sample=event.target.closest('[data-seek-sample]');if(sample){$('#question').value=sample.dataset.seekSample;$('#question').focus();return}
   if(event.target.closest('[data-action="share"]')){wisdomDraft=null;wisdomText='';$('#share-text').value='';showSeekState('share-consult');return}
   const shareSample=event.target.closest('[data-share-sample]');if(shareSample){$('#share-text').value=shareSample.dataset.shareSample;$('#share-text').focus();return}
   if(event.target.closest('[data-share-edit]')){$('#share-text').value=wisdomText;showSeekState('share-consult');return}
   if(event.target.closest('[data-share-new]')){wisdomDraft=null;wisdomText='';$('#share-text').value='';showSeekState('share-consult');return}
-  const runner=event.target.closest('[data-run]');if(runner){run(runner.dataset.run,runner.dataset.request);return}
+  const runner=event.target.closest('[data-run]');if(runner){if($('#person-dialog').open)$('#person-dialog').close();run(runner.dataset.run,runner.dataset.request);return}
   const feedback=event.target.closest('[data-feedback]');if(feedback){sendFeedback(feedback);return}
   const disc=event.target.closest('#disconnect-google');if(disc){try{await api('/api/google/disconnect',{method:'POST',body:'{}'});await loadGoogleStatus();toast('Google disconnected')}catch(error){toast(error.message)}return}
   const add=event.target.closest('#add-selected-breaks');if(add){

@@ -194,7 +194,7 @@ async function route(req, res) {
       const result=await consultOracle({messages,solutions,people,user});
       const solution=result.recommendation.solutionId?solutions.find(item=>item.id===result.recommendation.solutionId)||null:null;
       const recommendedPeople=(result.recommendation.peopleIds||[]).map(id=>people.find(item=>item.id===id)).filter(Boolean);
-      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,candidatePeopleIds:people.map(person=>person.id),retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
+      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,candidatePeopleIds:people.map(person=>person.id),candidateSolutions:solutions,retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
     }
     if (req.method === 'POST' && url.pathname === '/api/share/analyze') {
       const b=await body(req),userId=resolveUserId(b.userId),text=String(b.text||'').trim();

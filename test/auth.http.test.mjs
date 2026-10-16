@@ -131,6 +131,8 @@ describe('authentication gate (dev login enabled)', () => {
     const other = people.find(person => person.id !== persona.id);
     const chat = await client.request('/api/oracle/chat', { method: 'POST', json: { userId: other.id, messages: [{ role: 'user', content: 'my calendar is full of meetings' }] } });
     assert.equal(chat.status, 200);
+    assert.equal(chat.json().candidateSolutions.length,chat.json().retrieval.solutionCandidates);
+    assert.ok(chat.json().candidateSolutions.length<=5);
     assert.equal(chat.json().candidatePeopleIds.length,chat.json().retrieval.peopleCandidates);
     assert.ok(chat.json().candidatePeopleIds.length<=5);
     assert.ok(chat.json().candidatePeopleIds.every(id=>people.some(person=>person.id===id&&person.id!==persona.id)));

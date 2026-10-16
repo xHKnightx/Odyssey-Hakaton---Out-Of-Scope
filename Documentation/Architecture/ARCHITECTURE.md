@@ -134,7 +134,9 @@ Candidate scores currently use:
 28% FTS5 rank
 ```
 
-People retrieval first ranks an expanded pool, then applies a semantic relevance gate before taking at most five candidates. The strongest semantic match must reach `0.30`; remaining profiles must stay within `0.12` semantic similarity of that best match and retain at least `55%` of its combined hybrid score. This produces a variable candidate count, including zero. In exact-only fallback mode, positive FTS5 matches are preserved up to the limit because semantic scores are unavailable. These constants are covered by retrieval tests and should be recalibrated if the embedding model changes.
+People and solution retrieval first rank expanded pools, then apply a semantic relevance gate before taking at most five candidates of each type. The strongest semantic match must reach `0.30`; remaining records must stay within `0.12` semantic similarity of that best match and retain at least `55%` of its combined hybrid score. This produces variable candidate counts, including zero, rather than filling both lists to five. In exact-only fallback mode, positive FTS5 matches are preserved up to the limit because semantic scores are unavailable. These constants are covered by retrieval tests and should be recalibrated if the embedding model changes.
+
+The Oracle API returns the filtered solution candidates to the client alongside their count. The results view hides `Relevant solutions` when none pass the gate; otherwise the row opens the ranked candidates, while the LLM may select one of them as its primary recommendation.
 
 If embeddings are unavailable, retrieval automatically switches to exact-only FTS5 mode. No database content is sent to the embedding service in that mode.
 
