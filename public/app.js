@@ -174,7 +174,7 @@ function renderPantheon(){
   document.querySelectorAll('[data-period]').forEach(b=>b.classList.toggle('on',b.dataset.period===period));
 }
 function romanRank(value){let number=Number(value)||1,output='';for(const [n,symbol] of [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']])while(number>=n){output+=symbol;number-=n}return output||'I'}
-function render(){if(!data)return;activeUserId=data.activeUserId;renderSolutions();renderExpertise();renderPantheon();const groups={};data.requests.forEach(r=>{const text=r.text.toLowerCase(),k=text.includes('calendar')?'Calendar overload':text.includes('contract')||text.includes('invoice')?'Invoice ↔ contract checks':text.includes('salesforce')?'Call notes into CRM':text.includes('databricks')?'Databricks access requests':'Jira feedback digest';(groups[k]??=[]).push(r)});$('#discoveries-list').innerHTML=Object.entries(groups).map(([title,rs])=>`<article class="discovery"><div><h3>${esc(title)}</h3><p>${rs.map(r=>esc(r.text)).join(' · ')}</p></div><span class="count">${rs.length} related ${rs.length===1?'request':'requests'} · ${rs.length>1?'Opportunity':'Emerging'}</span></article>`).join('')}
+function render(){if(!data)return;activeUserId=data.activeUserId;renderSolutions();renderExpertise();renderPantheon();}
 async function load(){data=await api(`/api/overview?userId=${activeUserId}&period=${period}`);render();}
 async function loadGoogleStatus(){
   const status=$('#google-status'),actions=$('#google-actions');if(!status||!actions)return;

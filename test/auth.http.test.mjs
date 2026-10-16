@@ -52,6 +52,24 @@ describe('authentication gate (dev login enabled)', () => {
     assert.equal(asked.user_id, persona.id);
   });
 
+  it('keeps account data and other people\'s requests out of the overview', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const stranger = await signInAs(app, 'Daniel Ortiz');
+    const seek = await stranger.client.request('/api/seek', { method: 'POST', json: { text: 'quokka reimbursement grievance zorblax' } });
+    assert.equal(seek.status, 200);
+    const response = await client.request('/api/overview');
+    const raw = response.text;
+    const overview = response.json();
+    assert.ok(overview.people.length > 1);
+    for (const person of overview.people) {
+      for (const field of ['email', 'google_sub', 'last_login_at', 'avatar_url']) assert.ok(!(field in person), `people expose ${field}`);
+    }
+    assert.ok(overview.requests.every(request => request.user_id === persona.id && !('asker' in request)));
+    assert.ok(!overview.requests.some(request => request.id === seek.json().requestId));
+    assert.doesNotMatch(raw, /zorblax/);
+    assert.ok(!('runs' in overview) && !('events' in overview));
+  });
+
   it('lets only the person who ran a solution rate it', async () => {
     const author = (await signInAs(app, 'Priya Nair')).client;
     const runner = (await signInAs(app, 'Mia Novak')).client;
