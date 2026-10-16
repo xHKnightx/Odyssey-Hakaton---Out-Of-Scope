@@ -37,7 +37,7 @@ Extends the draft formula (shared 10 / used 5 / helped 20 / thanked 3).
 | Offering fills an open request | +5 | Pythia matched it to someone's open request and they were notified |
 | **Your solution was used** | 5 | Per unique user per month, not per run |
 | First use by someone else | +10 | One-time bonus per solution, the "it works for someone" moment |
-| **Helped a colleague** (ask_help → helped) | 20 | Confirmed by the seeker, not self-declared |
+| **Helped a colleague** (ask_help → helped) | 20 | Confirmed by the seeker, not self-declared; once per seeker, solution and month; max 5 confirmations per seeker per week |
 | **Received thanks** | 5 | Max 1 counted per person pair per week |
 | Gave thanks | 1 | Max 5 per week, so thanking is encouraged but can't be farmed |
 | **Consultation** (Seek wisdom) | 2 | Max 3 per week |

@@ -12,11 +12,11 @@ export function createClient(baseUrl) {
   };
   return {
     jar,
-    async request(path, { method = 'GET', json, headers = {} } = {}) {
+    async request(path, { method = 'GET', json, body, headers = {} } = {}) {
       const init = { method, redirect: 'manual', headers: { ...headers } };
       if (jar.size) init.headers.cookie = [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
-      if (json !== undefined) {
-        init.body = JSON.stringify(json);
+      if (json !== undefined || body !== undefined) {
+        init.body = json !== undefined ? JSON.stringify(json) : body;
         init.headers['content-type'] = 'application/json';
       }
       const response = await fetch(baseUrl + path, init);
