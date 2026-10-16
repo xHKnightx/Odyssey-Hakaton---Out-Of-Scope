@@ -64,7 +64,7 @@ The Expertise directory filter chips are built only from recurring employees' ar
 
 `POST /api/oracle/chat` is the main Seek Wisdom endpoint.
 
-Seek Wisdom and Share Wisdom also expose optional browser voice input. The microphone buttons use the Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) to place an editable transcript in the existing text area; they do not submit automatically. PYTHIA's server never receives microphone audio, but the browser may send audio to its configured speech-recognition provider. The resulting text follows the same normal Seek or Share submission path only after the colleague explicitly submits it. Unsupported browsers show a disabled microphone control, and denied microphone permission leaves typing available.
+Seek Wisdom and Share Wisdom also expose optional browser voice input through the same composer component. In browsers with `MediaRecorder`, the microphone records locally until the colleague presses it again (or the 60-second limit is reached), then sends the audio to the signed-in-only `POST /api/transcribe` endpoint. The server forwards recordings of up to 12 MB to SecondStack's OpenAI-compatible `/audio/transcriptions` endpoint using `TRANSCRIPTION_MODEL` (`gpt-4o-mini-transcribe` by default). The editable transcript is inserted into the existing text area and is never submitted automatically. Browsers without `MediaRecorder` fall back to the Web Speech API when available; denied microphone permission always leaves typing available.
 
 ```mermaid
 sequenceDiagram
@@ -153,7 +153,7 @@ Names remain in local SQLite and are never included in employee embedding text o
 
 Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
 
-The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. An onboarding introduction is sent only when the person explicitly clicks **Extract with Pythia**; it is used to draft the form and is not stored. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
+The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. Voice recordings are sent to SecondStack only after the colleague starts and stops microphone input; the resulting text remains editable before Seek or Share submission. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
 
@@ -173,6 +173,7 @@ LLM_MODEL=gpt-5.4-mini
 LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
 EMBEDDING_MODEL=text-embedding-3-small
+TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 
 AUTH_ALLOWED_DOMAINS=t1a.com
 AUTH_DEV_LOGIN=

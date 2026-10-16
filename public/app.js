@@ -14,7 +14,8 @@ async function api(path, options={}) {
 }
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3400)}
 const BrowserSpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-let activeRecognition=null,activeVoiceButton=null;
+const canRecordVoice=Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder);
+let activeRecognition=null,activeRecorder=null,activeVoiceStream=null,activeVoiceButton=null,voiceStopTimer=null,discardRecording=false;
 function renderComposerActions(){
   document.querySelectorAll('[data-composer-actions]').forEach(bar=>{
     const target=bar.dataset.composerActions,label=bar.dataset.submitLabel,title=bar.dataset.voiceTitle;
@@ -35,18 +36,22 @@ function renderReturnControls(){
   if(sanctumReturn){sanctumReturn.className='return-button';sanctumReturn.textContent='← Return'}
 }
 function resetVoiceInput(){
+  clearTimeout(voiceStopTimer);voiceStopTimer=null;
+  if(activeVoiceStream){for(const track of activeVoiceStream.getTracks())track.stop()}
   if(activeVoiceButton){
-    activeVoiceButton.classList.remove('listening');
+    activeVoiceButton.classList.remove('listening','transcribing');
+    activeVoiceButton.disabled=false;
     activeVoiceButton.setAttribute('aria-pressed','false');
     activeVoiceButton.setAttribute('aria-label','Start voice input');
   }
-  activeRecognition=null;activeVoiceButton=null;
+  activeRecognition=null;activeRecorder=null;activeVoiceStream=null;activeVoiceButton=null;discardRecording=false;
 }
-function startVoiceInput(button){
-  if(!BrowserSpeechRecognition){toast('Voice input is not supported in this browser. Try Chrome or type your message.');return}
+function appendTranscript(input,base,transcript){
+  input.value=[base,transcript.trim()].filter(Boolean).join(base?' ':'');
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function startBrowserSpeech(button,input,base){
   if(activeRecognition){activeRecognition.stop();if(activeVoiceButton===button)return}
-  const input=$(`#${button.dataset.voiceTarget}`);if(!input)return;
-  const base=input.value===input.defaultValue?'':input.value.trim();
   const recognition=new BrowserSpeechRecognition();
   recognition.continuous=true;recognition.interimResults=true;recognition.lang=navigator.language||'en-US';
   recognition.onstart=()=>{
@@ -56,8 +61,7 @@ function startVoiceInput(button){
   recognition.onresult=event=>{
     let transcript='';
     for(let i=0;i<event.results.length;i++)transcript+=event.results[i][0]?.transcript||'';
-    input.value=[base,transcript.trim()].filter(Boolean).join(base?' ':'');
-    input.dispatchEvent(new Event('input',{bubbles:true}));
+    appendTranscript(input,base,transcript);
   };
   recognition.onerror=event=>{
     if(event.error==='not-allowed'||event.error==='service-not-allowed')toast('Microphone access was not allowed. Enable it for this site or type your message.');
@@ -65,6 +69,51 @@ function startVoiceInput(button){
   };
   recognition.onend=()=>{if(activeRecognition===recognition)resetVoiceInput()};
   try{recognition.start()}catch(error){resetVoiceInput();toast('Voice input could not start. Try again or type your message.')}
+}
+async function startRecordedVoice(button,input,base){
+  if(activeRecorder){
+    if(activeRecorder.state!=='inactive')activeRecorder.stop();
+    return;
+  }
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}
+  catch(error){toast(error.name==='NotAllowedError'?'Microphone access was not allowed. Enable it for this site or type your message.':'The microphone could not be opened.');return}
+  const mimeType=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(type=>MediaRecorder.isTypeSupported?.(type))||'';
+  const recorder=new MediaRecorder(stream,mimeType?{mimeType}:undefined),chunks=[];
+  activeRecorder=recorder;activeVoiceStream=stream;activeVoiceButton=button;discardRecording=false;
+  recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data)};
+  recorder.onstart=()=>{
+    button.classList.add('listening');button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Stop and transcribe voice input');
+    voiceStopTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop()},60_000);
+  };
+  recorder.onerror=()=>{resetVoiceInput();toast('Voice recording stopped unexpectedly. Try again or type your message.')};
+  recorder.onstop=async()=>{
+    const discard=discardRecording,blob=new Blob(chunks,{type:recorder.mimeType||mimeType||'audio/webm'});
+    clearTimeout(voiceStopTimer);voiceStopTimer=null;
+    for(const track of stream.getTracks())track.stop();
+    activeRecorder=null;activeVoiceStream=null;
+    button.classList.remove('listening');button.classList.add('transcribing');button.disabled=true;button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Transcribing voice input');
+    if(discard){resetVoiceInput();return}
+    try{
+      const response=await fetch('/api/transcribe',{method:'POST',headers:{'content-type':blob.type},body:blob});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||`Voice transcription failed (${response.status}).`);
+      appendTranscript(input,base,result.text||'');input.focus();
+    }catch(error){toast(error.message)}
+    finally{resetVoiceInput()}
+  };
+  recorder.start(250);
+}
+function startVoiceInput(button){
+  const input=$(`#${button.dataset.voiceTarget}`);if(!input)return;
+  const base=input.value===input.defaultValue?'':input.value.trim();
+  if(canRecordVoice){startRecordedVoice(button,input,base);return}
+  if(BrowserSpeechRecognition){startBrowserSpeech(button,input,base);return}
+  toast('Voice input is not supported in this browser. Try Chrome or type your message.');
+}
+function cancelVoiceInput(){
+  if(activeRecorder){discardRecording=true;if(activeRecorder.state!=='inactive')activeRecorder.stop();return}
+  if(activeRecognition)activeRecognition.stop();
 }
 function view(id){document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===id));document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'});if(id==='connections')loadGoogleStatus()}
 function avatar(person,size=''){return `<span class="av ${size}" style="background:${esc(person.color||'#d4a855')}" title="${esc(person.name)}">${esc(person.initials||person.name.split(' ').map(n=>n[0]).join('').slice(0,2))}</span>`}
@@ -134,7 +183,7 @@ async function loadOracleStatus(){
 }
 
 function showSeekState(name){
-  if(activeRecognition)activeRecognition.stop();
+  cancelVoiceInput();
   const states=['seek-home','seek-consult','seek-results','share-consult','share-results'];
   const active=name.includes('-')?name:`seek-${name}`;
   for(const state of states)$(`#${state}`).hidden=state!==active;
@@ -288,7 +337,7 @@ $('#people-search').addEventListener('input',renderDirectory);
 renderComposerActions();
 renderReturnControls();
 document.querySelectorAll('[data-voice-target]').forEach(button=>{
-  if(!BrowserSpeechRecognition){button.disabled=true;button.title='Voice input is not supported in this browser';button.setAttribute('aria-label','Voice input is not supported')}
+  if(!canRecordVoice&&!BrowserSpeechRecognition){button.disabled=true;button.title='Voice input is not supported in this browser';button.setAttribute('aria-label','Voice input is not supported')}
   button.addEventListener('click',()=>startVoiceInput(button));
 });
 $('#question').addEventListener('keydown',event=>{

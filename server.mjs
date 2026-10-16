@@ -15,6 +15,7 @@ import { consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
 import { analyzeProfile, analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
 import { expertiseKey, normalizeExpertiseAreas } from './lib/expertise.mjs';
+import { transcribeAudio, transcriptionConfigured, transcriptionModel } from './lib/transcription.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -125,6 +126,15 @@ if (!one('SELECT value FROM app_meta WHERE key=?','gamification_bootstrap_dedupe
 const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
 const json = (res, code, value) => { res.writeHead(code, { 'content-type':'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
 async function body(req) { let raw=''; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; }
+async function binaryBody(req, maxBytes=12*1024*1024) {
+  const chunks=[];let size=0;
+  for await (const chunk of req) {
+    size+=chunk.length;
+    if(size>maxBytes){const error=new Error('Voice recording is too large.');error.status=413;throw error}
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 const oauthStates = new Map();
 const redirect = (res, location) => { res.writeHead(302, { location }); res.end(); };
 const resolveUserId = () => currentUser()?.id ?? null; // the actor is the signed-in user; any userId sent by the client is ignored
@@ -160,7 +170,14 @@ async function route(req, res) {
   }
   if (url.pathname.startsWith('/api/')) {
     if (req.method === 'GET' && url.pathname === '/api/oracle/status') {
-      return json(res, 200, {...oracleStatus(),retrieval:{mode:retrieval.configured()?'hybrid':'exact',embeddingModel:retrieval.model()}});
+      return json(res, 200, {...oracleStatus(),retrieval:{mode:retrieval.configured()?'hybrid':'exact',embeddingModel:retrieval.model()},transcription:{configured:transcriptionConfigured(),model:transcriptionModel()}});
+    }
+    if (req.method === 'POST' && url.pathname === '/api/transcribe') {
+      if(!resolveUserId())return json(res,400,{error:'A valid profile is required.'});
+      const contentType=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
+      if(!contentType.startsWith('audio/'))return json(res,415,{error:'Send an audio recording.'});
+      try{return json(res,200,await transcribeAudio(await binaryBody(req),contentType));}
+      catch(error){return json(res,error.status||422,{error:error.message});}
     }
     if (req.method === 'POST' && url.pathname === '/api/oracle/chat') {
       const b=await body(req),userId=resolveUserId(b.userId);

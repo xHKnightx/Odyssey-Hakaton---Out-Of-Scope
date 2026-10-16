@@ -13,6 +13,7 @@ LLM_MODEL=replace-with-a-chat-model
 LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
 EMBEDDING_MODEL=text-embedding-3-small
+TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 ```
 
 `LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env.local`. When both files exist, `.env.local` overrides `.env`.
@@ -33,6 +34,10 @@ On startup, FTS5 records are refreshed and only records whose content hash chang
 
 Changing `EMBEDDING_MODEL` creates a separate embedding set and causes all records to be embedded with the new model on the next start.
 
+## Voice transcription
+
+Seek Wisdom and Share Wisdom record microphone audio in the browser and send it to the signed-in-only `POST /api/transcribe` endpoint. The server forwards the recording to the gateway's OpenAI-compatible `/audio/transcriptions` endpoint using `TRANSCRIPTION_MODEL`; the default is `gpt-4o-mini-transcribe`. The transcript is placed in the existing text area for review and is never submitted automatically. Browsers without `MediaRecorder` fall back to the Web Speech API when it is available.
+
 ## How recommendations work
 
 The server gives the model the current conversation, the published local solution catalogue, and the local expertise directory. The model must choose one of three paths:
@@ -47,4 +52,5 @@ The model can return only database IDs included in its context. The server valid
 
 - `GET /api/oracle/status` reports whether a live model is configured.
 - `POST /api/oracle/chat` accepts `{ userId, messages }`, where messages use `{ role, content }`.
+- `POST /api/transcribe` accepts an `audio/*` request body up to 12 MB and returns `{ text, model }`.
 - The last 12 messages are sent to the model, with a maximum of 4,000 characters per message.
