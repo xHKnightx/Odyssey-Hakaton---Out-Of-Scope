@@ -19,7 +19,7 @@ flowchart LR
   AUTH --> OIDC["Google sign-in<br/>OpenID Connect"]
 ```
 
-The default server binds to `127.0.0.1:3000`. Secrets are read from `.env.local`, which overrides `.env` and is excluded from Git.
+The default server binds to `127.0.0.1:3000`. Settings are read from `.env`, then `.env.local`; a later line overrides an earlier one, including an empty value. Both files are excluded from Git.
 
 ### Local database and seed lifecycle
 

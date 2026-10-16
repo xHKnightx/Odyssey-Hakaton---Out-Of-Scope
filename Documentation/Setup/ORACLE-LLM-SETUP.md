@@ -4,7 +4,7 @@ Oracle can use any gateway that implements the OpenAI-compatible `POST /chat/com
 
 ## Configure
 
-Copy `.env.example` to `.env.local` and set:
+Put these settings in `.env` in the project root. If you do not have one yet, copy `.env.example` to `.env`; if you already have one (for example with the Google credentials), append the lines below to it instead of replacing it:
 
 ```dotenv
 LLM_BASE_URL=https://secondstack.t1a.io/gateway/api/v1
@@ -16,15 +16,23 @@ EMBEDDING_MODEL=text-embedding-3-small
 TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 ```
 
-`LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env.local`. When both files exist, `.env.local` overrides `.env`.
+`LLM_BASE_URL` may also be the full `/chat/completions` URL. `LLM_API_KEY` may be left empty for a trusted gateway that does not require bearer authentication. Never commit `.env` or `.env.local`.
 
-Restart the app after changing `.env.local`:
+`.env.local` is optional and is read after `.env`, so its values win. A line with an empty value (`GOOGLE_CLIENT_ID=`) also counts and overrides a filled value from `.env`, so do not copy `.env.example` to `.env.local` as a whole; put only the variables you want to override there.
+
+Restart the app after changing `.env` or `.env.local`:
 
 ```sh
 npm start
 ```
 
-The Seek Wisdom composer displays `Live LLM` and the configured model when the connection is enabled. If a gateway call times out, fails, or returns malformed structured output, Oracle automatically uses local catalogue matching and shows that it fell back.
+To check that the settings were picked up:
+
+- The server log prints `Search index ready: ... mode=hybrid` at start. `mode=exact` or `Embedding backfill failed` means embeddings are unavailable and search is keyword-only.
+- While signed in, open `http://localhost:3000/api/oracle/status`. `"configured":true` with the model name means chat is enabled; `retrieval.mode` is `hybrid` when embeddings work; `transcription.configured` covers voice input. `"configured":false` means `LLM_BASE_URL` or `LLM_MODEL` is missing.
+- After a Seek Wisdom question the app shows a notice only when something is wrong: `Oracle is using local matching` when the LLM is not configured, or `LLM unavailable · using local matching: <reason>` when a gateway call times out, fails, or returns malformed structured output. Oracle then falls back to local catalogue matching.
+
+The interface does not display a provider or "live" badge.
 
 Calendar Breather uses the same gateway settings and timeout on every scheduled pass. Users choose a Gentle, Balanced, or Extra room mode and an automatic cadence of once daily or once weekly; they do not set a weekly break count. PYTHIA chooses a justified number of breaks, spaces them through demanding weekdays, and selects durations from 5, 7, 8, 9, 10, or 15 minutes. It counts existing holds in the rolling seven-day window to avoid duplicates. The planning dialog enables sentiment context by default, and users can turn it off. When enabled, the model receives bounded recent email subjects/snippets, sanitized upcoming meeting titles and prior meeting titles, and pseudonymous company keys; it analyzes sentiment and uses that signal with calendar load to choose timing. Attendee addresses and full email bodies are never sent. It can recommend only server-generated conflict-free slots. The previous-week view reruns the analysis as a preview only and never creates past events. A deterministic local planner remains when the gateway fails; it cannot provide LLM sentiment analysis. The scheduler runs while the local server process stays up; overdue work is analyzed once after restart.
 
