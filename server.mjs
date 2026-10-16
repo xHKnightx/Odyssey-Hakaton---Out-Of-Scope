@@ -13,6 +13,9 @@ import { currentUser, runWithUser } from './lib/auth/context.mjs';
 import { saveOwnProfile } from './lib/auth/profile.mjs';
 import { adviseCalendarBreaks, consultOracle, oracleStatus } from './lib/oracle.mjs';
 import { createRetrieval } from './lib/retrieval.mjs';
+import { analyzeProfile, analyzeWisdom, validateWisdomAnalysis } from './lib/wisdom.mjs';
+import { expertiseKey, normalizeExpertiseAreas } from './lib/expertise.mjs';
+import { transcribeAudio, transcriptionConfigured, transcriptionModel } from './lib/transcription.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -56,10 +59,10 @@ const auth = createAuth(db);
 const count = db.prepare('SELECT COUNT(*) n FROM users').get().n;
 if (!count) {
   const user = db.prepare('INSERT INTO users(name,title,team,skills,honorific) VALUES(?,?,?,?,?)');
-  user.run('Anastasia Volkov', 'Transformation Lead', 'Operations', 'Change management, facilitation', 'Reader of Contracts');
-  user.run('Priya Nair', 'Data & Automation Lead', 'Finance', 'Analytics, automation, calendar design', 'Keeper of the Data');
-  user.run('Daniel Ortiz', 'Senior Analyst', 'Finance', 'Power BI, SQL, reporting', 'Guardian of the Ledger');
-  user.run('Mia Novak', 'People Partner', 'People', 'Wellbeing, coaching, facilitation', '');
+  user.run('Anastasia Volkov', 'Transformation Lead', 'Operations', normalizeExpertiseAreas('Change management, facilitation').join(', '), 'Reader of Contracts');
+  user.run('Priya Nair', 'Data & Automation Lead', 'Finance', normalizeExpertiseAreas('Analytics, automation, calendar design').join(', '), 'Keeper of the Data');
+  user.run('Daniel Ortiz', 'Senior Analyst', 'Finance', normalizeExpertiseAreas('Power BI, SQL, reporting').join(', '), 'Guardian of the Ledger');
+  user.run('Mia Novak', 'People Partner', 'People', normalizeExpertiseAreas('Wellbeing, coaching, facilitation').join(', '), '');
   const sol = db.prepare('INSERT INTO solutions(title,kind,summary,owner_id,minutes_saved,runnable) VALUES(?,?,?,?,?,?)');
   sol.run('Calendar Breather', 'agent', 'Finds the most demanding blocks in your week and proposes short recovery breaks between meetings.', 2, 20, 1);
   sol.run('Finance Data Quality Checklist', 'guide', 'A practical checklist for validating monthly finance exports before they reach reporting.', 3, 35, 0);
@@ -76,7 +79,7 @@ if (one('SELECT value FROM app_meta WHERE key=?', 'mockup_seed_version')?.value 
   const personIds = {};
   for (const person of mockupSeed.people) {
     const old = person.key === 'anastasia' ? one('SELECT id FROM users WHERE id=1') : one('SELECT id FROM users WHERE name=?', person.name);
-    const values = [person.name, person.role, person.team, person.skills.join(', '), honorifics.get(person.key) || '', person.initials, person.color, person.location, person.availability, person.experience || ''];
+    const values = [person.name, person.role, person.team, normalizeExpertiseAreas(person.skills).join(', '), honorifics.get(person.key) || '', person.initials, person.color, person.location, person.availability, person.experience || ''];
     if (old) {
       db.prepare('UPDATE users SET name=?,title=?,team=?,skills=?,honorific=?,initials=?,color=?,location=?,availability=?,experience=? WHERE id=?').run(...values, old.id);
       personIds[person.key] = old.id;
@@ -95,6 +98,16 @@ if (one('SELECT value FROM app_meta WHERE key=?', 'mockup_seed_version')?.value 
   if (!one('SELECT id FROM gratitude_seed LIMIT 1')) for (const g of mockupSeed.gratitude) db.prepare('INSERT INTO gratitude_seed(from_user_id,to_user_id,note) VALUES(?,?,?)').run(personIds[g.from],personIds[g.to],g.note);
   db.prepare('INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('mockup_seed_version',mockupSeed.version);
   console.log(`Loaded ${mockupSeed.people.length} mockup people and ${mockupSeed.solutions.length} mockup solutions.`);
+}
+
+if (!one('SELECT value FROM app_meta WHERE key=?','expertise_normalization_v1')) {
+  const updateExpertise=db.prepare('UPDATE users SET skills=? WHERE id=?');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for(const user of all('SELECT id,skills FROM users'))updateExpertise.run(normalizeExpertiseAreas(user.skills).join(', '),user.id);
+    db.prepare('INSERT INTO app_meta(key,value) VALUES(?,?)').run('expertise_normalization_v1','case-and-whitespace');
+    db.exec('COMMIT');
+  } catch(error) { db.exec('ROLLBACK'); throw error; }
 }
 
 if (!one('SELECT value FROM app_meta WHERE key=?','gamification_history_v1')) {
@@ -121,6 +134,15 @@ if (!one('SELECT value FROM app_meta WHERE key=?','gamification_bootstrap_dedupe
 const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
 const json = (res, code, value) => { res.writeHead(code, { 'content-type':'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
 async function body(req) { let raw=''; for await (const chunk of req) raw += chunk; return raw ? JSON.parse(raw) : {}; }
+async function binaryBody(req, maxBytes=12*1024*1024) {
+  const chunks=[];let size=0;
+  for await (const chunk of req) {
+    size+=chunk.length;
+    if(size>maxBytes){const error=new Error('Voice recording is too large.');error.status=413;throw error}
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
 const oauthStates = new Map();
 const redirect = (res, location) => { res.writeHead(302, { location }); res.end(); };
 const resolveUserId = () => currentUser()?.id ?? null; // the actor is the signed-in user; any userId sent by the client is ignored
@@ -229,7 +251,14 @@ async function route(req, res) {
   }
   if (url.pathname.startsWith('/api/')) {
     if (req.method === 'GET' && url.pathname === '/api/oracle/status') {
-      return json(res, 200, {...oracleStatus(),retrieval:{mode:retrieval.configured()?'hybrid':'exact',embeddingModel:retrieval.model()}});
+      return json(res, 200, {...oracleStatus(),retrieval:{mode:retrieval.configured()?'hybrid':'exact',embeddingModel:retrieval.model()},transcription:{configured:transcriptionConfigured(),model:transcriptionModel()}});
+    }
+    if (req.method === 'POST' && url.pathname === '/api/transcribe') {
+      if(!resolveUserId())return json(res,400,{error:'A valid profile is required.'});
+      const contentType=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
+      if(!contentType.startsWith('audio/'))return json(res,415,{error:'Send an audio recording.'});
+      try{return json(res,200,await transcribeAudio(await binaryBody(req),contentType));}
+      catch(error){return json(res,error.status||422,{error:error.message});}
     }
     if (req.method === 'POST' && url.pathname === '/api/oracle/chat') {
       const b=await body(req),userId=resolveUserId(b.userId);
@@ -252,7 +281,25 @@ async function route(req, res) {
         'Creates private tentative calendar holds that you can accept or decline.'
       ];
       const recommendedPeople=(result.recommendation.peopleIds||[]).map(id=>people.find(item=>item.id===id)).filter(Boolean);
-      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
+      return json(res,200,{...result,requestId,award,solution,people:recommendedPeople,candidatePeopleIds:people.map(person=>person.id),candidateSolutions:solutions,retrieval:{mode:candidates.mode,fallbackReason:candidates.fallbackReason,solutionCandidates:solutions.length,peopleCandidates:people.length,embeddingModel:retrieval.model()},status:oracleStatus()});
+    }
+    if (req.method === 'POST' && url.pathname === '/api/share/analyze') {
+      const b=await body(req),userId=resolveUserId(b.userId),text=String(b.text||'').trim();
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      if(!text)return json(res,400,{error:'Describe what you know or what you built first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep the contribution under 4,000 characters.'});
+      const user=one('SELECT id,title,team,skills FROM users WHERE id=?',userId);
+      const catalogue=all('SELECT title,kind,summary FROM solutions ORDER BY id');
+      try{return json(res,200,await analyzeWisdom({text,user,catalogue}));}
+      catch(error){return json(res,422,{error:error.message});}
+    }
+    if (req.method === 'POST' && url.pathname === '/api/profile/analyze') {
+      const b=await body(req),text=String(b.text||'').trim();
+      if(!resolveUserId(b.userId))return json(res,400,{error:'A valid profile is required.'});
+      if(!text)return json(res,400,{error:'Tell Pythia what you do and what you know first.'});
+      if(text.length>4000)return json(res,400,{error:'Keep the introduction under 4,000 characters.'});
+      try{return json(res,200,await analyzeProfile(text));}
+      catch(error){return json(res,422,{error:error.message});}
     }
     if (req.method === 'GET' && url.pathname === '/api/google/status') {
       const token = await readGoogleToken();
@@ -288,24 +335,26 @@ async function route(req, res) {
       if(!existing)return json(res,404,{error:'Colleague profile not found.'});
       if(id!==currentUser()?.id)return json(res,403,{error:'You can only edit your own profile.'});
       const b=await body(req),title=String(b.title??existing.title??'').trim(),team=String(b.team??existing.team??'').trim(),experience=String(b.experience??existing.experience??'').trim();
-      const skills=b.skills==null?String(existing.skills||'').split(',').map(s=>s.trim()).filter(Boolean):[...new Set((Array.isArray(b.skills)?b.skills:String(b.skills).split(/[\n,]/)).map(s=>String(s).trim()).filter(Boolean))];
-      if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one skill are required.'});
+      const skills=normalizeExpertiseAreas(b.skills==null?existing.skills:b.skills);
+      if(!title||!team||!skills.length)return json(res,400,{error:'Role, team, and at least one area of expertise are required.'});
       if(title.length>120||team.length>80||experience.length>1200||skills.length>20||skills.some(skill=>skill.length>60))return json(res,400,{error:'One or more profile fields exceed the allowed length.'});
       db.prepare('UPDATE users SET title=?,team=?,skills=?,experience=?,profile_completed=1 WHERE id=?').run(title,team,skills.join(', '),experience,id);
       const searchIndex=await retrieval.indexPerson(id).catch(error=>({indexed:0,mode:'exact',error:error.message}));
       return json(res,200,{ok:true,person:one('SELECT * FROM users WHERE id=?',id),searchIndex});
     }
     if(req.method==='POST'&&url.pathname==='/api/skills/confirm'){
-      const b=await body(req),userId=resolveUserId(b.userId),skill=String(b.skill||'').trim();
+      const b=await body(req),userId=resolveUserId(b.userId),skill=normalizeExpertiseAreas([b.skill],{limit:1})[0]||'';
       if(!userId)return json(res,400,{error:'A valid profile is required.'});
-      if(!skill||skill.length>60)return json(res,400,{error:'Enter a skill under 60 characters.'});
-      const user=one('SELECT skills FROM users WHERE id=?',userId),skills=(user.skills||'').split(',').map(s=>s.trim()).filter(Boolean);
-      if(skills.some(s=>s.toLowerCase()===skill.toLowerCase()))return json(res,200,{ok:true,award:{points:0,reason:'already_on_profile'},skills});
+      if(!skill||skill.length>60)return json(res,400,{error:'Enter an area of expertise under 60 characters.'});
+      const user=one('SELECT skills FROM users WHERE id=?',userId),skills=normalizeExpertiseAreas(user.skills);
+      if(skills.some(s=>expertiseKey(s)===expertiseKey(skill)))return json(res,200,{ok:true,award:{points:0,reason:'already_on_profile'},skills});
+      if(skills.length>=20)return json(res,400,{error:'A profile can contain up to 20 areas of expertise.'});
+      const updatedSkills=normalizeExpertiseAreas([...skills,skill]);
       db.exec('BEGIN IMMEDIATE');let award;
-      try{db.prepare('UPDATE users SET skills=? WHERE id=?').run([...skills,skill].join(', '),userId);award=gamification.rewardSkillConfirmation(userId,skill);db.exec('COMMIT')}
+      try{db.prepare('UPDATE users SET skills=? WHERE id=?').run(updatedSkills.join(', '),userId);award=gamification.rewardSkillConfirmation(userId,skill);db.exec('COMMIT')}
       catch(error){db.exec('ROLLBACK');throw error}
       const searchIndex=await retrieval.indexPerson(userId).catch(error=>({indexed:0,mode:'exact',error:error.message}));
-      return json(res,200,{ok:true,award,skills:[...skills,skill],searchIndex});
+      return json(res,200,{ok:true,award,skills:updatedSkills,searchIndex});
     }
     if(req.method==='POST'&&url.pathname==='/api/thanks'){
       const b=await body(req),actorId=resolveUserId(b.userId),targetId=Number(b.targetId);
@@ -473,10 +522,38 @@ async function route(req, res) {
       return json(res,200,{ok:true,award});
     }
     if(req.method==='POST'&&url.pathname==='/api/share'){
-      const b=await body(req),userId=resolveUserId(b.userId),title=String(b.title||'').trim(),text=String(b.body||'').trim(); if(!userId)return json(res,400,{error:'A valid profile is required.'}); if(!title||!text)return json(res,400,{error:'Add a title and a short description.'});
-      const award=gamification.rewardOffering(userId,title,text);
-      const id=db.prepare('INSERT INTO contributions(user_id,title,body) VALUES(?,?,?)').run(userId,title,text).lastInsertRowid;
-      return json(res,200,{ok:true,id:Number(id),award});
+      const b=await body(req),userId=resolveUserId(b.userId),text=String(b.text||b.body||'').trim();
+      if(!userId)return json(res,400,{error:'A valid profile is required.'});
+      if(!text||text.length>4000)return json(res,400,{error:'Add a contribution under 4,000 characters.'});
+      let analysis;
+      try{analysis=validateWisdomAnalysis(b.analysis||b,{sourceText:text});}
+      catch(error){return json(res,400,{error:error.message});}
+      const user=one('SELECT * FROM users WHERE id=?',userId),existingSkills=normalizeExpertiseAreas(user.skills);
+      const skills=normalizeExpertiseAreas([...existingSkills,...analysis.skills],{limit:20});
+      const experienceItems=analysis.experience.map(item=>item.details?`${item.title}: ${item.details}`:item.title);
+      const existingExperience=String(user.experience||'').trim(),newExperience=experienceItems.filter(item=>!existingExperience.toLowerCase().includes(item.toLowerCase()));
+      const experience=[existingExperience,...newExperience].filter(Boolean).join('\n').slice(0,1200);
+      const title=analysis.solutions[0]?.title||analysis.skills[0]||analysis.experience[0]?.title||'Shared wisdom';
+      const insertedSolutions=[],duplicates=[];let contributionId,award;
+      db.exec('BEGIN IMMEDIATE');
+      try{
+        award=gamification.rewardOffering(userId,title,text);
+        contributionId=Number(db.prepare('INSERT INTO contributions(user_id,title,body) VALUES(?,?,?)').run(userId,title,text).lastInsertRowid);
+        db.prepare('UPDATE users SET skills=?,experience=? WHERE id=?').run(skills.join(', '),experience,userId);
+        const insertSolution=db.prepare('INSERT INTO solutions(title,kind,summary,owner_id,minutes_saved,runnable) VALUES(?,?,?,?,?,?)');
+        for(const solution of analysis.solutions){
+          const existing=one('SELECT id,title FROM solutions WHERE lower(title)=lower(?)',solution.title);
+          if(existing){duplicates.push(existing);continue;}
+          // A catalogue record is discoverable immediately, but it is not
+          // executable until a real runner/integration is registered for it.
+          const result=insertSolution.run(solution.title,solution.kind,solution.summary,userId,solution.minutesSaved,0);
+          insertedSolutions.push({...solution,runnable:false,id:Number(result.lastInsertRowid)});
+        }
+        db.exec('COMMIT');
+      }catch(error){db.exec('ROLLBACK');throw error;}
+      const searchIndex={person:await retrieval.indexPerson(userId).catch(error=>({indexed:0,mode:'exact',error:error.message})),solutions:[]};
+      for(const solution of insertedSolutions)searchIndex.solutions.push(await retrieval.indexSolution(solution.id).catch(error=>({indexed:0,mode:'exact',error:error.message})));
+      return json(res,200,{ok:true,id:contributionId,award,saved:{skills:skills.length-existingSkills.length,experience:newExperience.length,solutions:insertedSolutions.length},skills,experience,solutions:insertedSolutions,duplicates,searchIndex});
     }
     console.warn(`Unmatched API route: ${req.method} ${url.pathname}`);
     return json(res,404,{error:'API route not found.',method:req.method,path:url.pathname});

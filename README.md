@@ -28,11 +28,15 @@ Project documentation is collected in the [Documentation index](./Documentation/
 
 Seek Wisdom supports a conversational OpenAI-compatible LLM gateway, grounded in the local solution catalogue and expertise directory. It recommends an existing solution, relevant colleagues, or a new skill/agent plan. Without LLM settings it falls back to local Unicode-aware matching. See the [Oracle LLM setup guide](./Documentation/Setup/ORACLE-LLM-SETUP.md).
 
+Share Wisdom uses the same configured chat model to extract **areas of expertise**, experience, and reusable assets from a free-text contribution. An area of expertise is a human capability and never becomes a catalogue asset unless the message explicitly describes a created or used artifact/workflow and supplies supporting source evidence. Catalogue `skill` records are labelled **Playbook / Agent skill** in the UI. The contributor reviews and edits the draft before confirmation; confirmed profile data and catalogue assets are stored locally and indexed for Seek Wisdom. Shared catalogue agents are not executable until a runner integration is added.
+
+On first sign-in, a colleague can optionally describe their work in free text and use **Extract with Pythia** to draft role, team, areas of expertise, and experience. The draft is review-only until the profile form is submitted and never publishes catalogue solutions.
+
 ## Signing in
 
 Every page and API call needs a session. The login page offers two ways in:
 
-- **Sign in with Google** — company accounts only (`AUTH_ALLOWED_DOMAINS`, default `t1a.com`). It requests identity only (`openid email profile`); Calendar and Gmail are connected separately under Connections, and only for the account you signed in with. The first sign-in creates your profile and asks for your role and skills.
+- **Sign in with Google** — company accounts only (`AUTH_ALLOWED_DOMAINS`, default `t1a.com`). It requests identity only (`openid email profile`); Calendar and Gmail are connected separately under Connections, and only for the account you signed in with. The first sign-in creates your profile and asks for your role and areas of expertise.
 - **Demo persona** (development login) — pick any seeded colleague. It is on while the Google credentials in `.env` are empty or when `AUTH_DEV_LOGIN=1`, and it is always off when `NODE_ENV=production`.
 
 The identity of the person making a request always comes from the session, never from the request body. Setup steps are in the [Google setup guide](./Documentation/Setup/GOOGLE-SETUP.md); the session model and API gating are described in the [current architecture](./Documentation/Architecture/ARCHITECTURE.md#authentication-and-sessions).

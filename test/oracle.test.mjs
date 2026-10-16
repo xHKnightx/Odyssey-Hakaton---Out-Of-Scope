@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rankOracleContext, tokenize } from '../lib/oracle.mjs';
+import { rankOracleContext, resolveMentionedPeople, tokenize } from '../lib/oracle.mjs';
 
 const solutions=[
   {id:1,title:'Calendar Breather',kind:'agent',summary:'Find recovery breaks between meetings',owner:'Priya'},
@@ -19,4 +19,11 @@ test('Russian calendar request ranks Calendar Breather first',()=>{
   const ranked=rankOracleContext('Мой календарь забит встречами',solutions,people);
   assert.equal(ranked.solutions[0].id,1);
   assert.equal(ranked.people[0].id,1);
+});
+
+test('people mentioned by role are resolved only from retrieved candidates',()=>{
+  const people=[{id:7,title:'Senior Data Engineer'},{id:9,title:'Data Governance Lead'},{id:11,title:'Salesforce Architect'}];
+  assert.deepEqual(resolveMentionedPeople('Ask the Senior Data Engineer, with the Data Governance Lead as a secondary option.',people),[7,9]);
+  assert.deepEqual(resolveMentionedPeople('Ask an aerospace cryptographer.',people),[]);
+  assert.deepEqual(resolveMentionedPeople('The Data Governance Lead can help.',people,[7]),[7,9]);
 });

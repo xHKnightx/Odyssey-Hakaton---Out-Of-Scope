@@ -1,5 +1,5 @@
-// Session shell for the signed-in app: user chip, sign out, persona switch (dev login only),
-// own-profile onboarding. Loaded before app.js; it never touches app.js internals.
+// Session shell for the signed-in app: user chip, sign out, and own-profile onboarding.
+// Loaded before app.js; it never touches app.js internals.
 (() => {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
@@ -19,8 +19,7 @@
   const style = document.createElement('style');
   style.textContent = `
 .profile{flex:none;white-space:nowrap}
-.profile .demo-badge,.demo-user-picker span{display:none}
-.demo-user-picker select{max-width:150px}
+.profile .demo-badge{display:none}
 .user-chip{display:flex;align-items:center;gap:9px}
 .user-chip .user-name{font:600 12px var(--sans);color:var(--fg)}
 .user-chip.compact .user-name{display:none}
@@ -52,18 +51,6 @@
     $('.profile').append(chip);
   }
 
-  function configurePicker(me) {
-    const picker = $('.demo-user-picker');
-    if (!me.devLogin) { if (picker) picker.hidden = true; return; }
-    // Development login: the picker switches the session to another persona instead of just relabelling the UI.
-    document.addEventListener('change', async event => {
-      if (event.target.id !== 'active-user') return;
-      event.stopImmediatePropagation();
-      const response = await nativeFetch('/auth/dev-login', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ userId: Number(event.target.value) }) });
-      if (response.ok) location.reload();
-    }, true);
-  }
-
   function fillProfileForm(me) {
     const form = $('#create-profile-form');
     const user = me.user;
@@ -77,15 +64,11 @@
     set('skills', own('skills'));
     set('experience', user.experience);
     $('#create-profile-dialog h2').textContent = me.profileComplete ? 'Your profile' : 'Welcome to PYTHIA';
-    $('#create-profile-dialog .profile-form-intro').textContent = me.profileComplete
-      ? 'Keep your role and skills current so colleagues can find you.'
-      : 'Tell colleagues what you do and what you know. You can change this at any time.';
   }
 
   async function boot() {
     const me = await getMe();
     mountUserChip(me);
-    configurePicker(me);
     const button = $('#create-profile');
     button.textContent = 'Edit my profile';
     button.addEventListener('click', async () => fillProfileForm(await getMe()));

@@ -80,11 +80,16 @@ describe('authentication gate (dev login enabled)', () => {
 
   it('edits only the signed-in profile', async () => {
     const { client, persona } = await signInAs(app, 'Daniel Ortiz');
-    const profile = { name: 'Daniel Ortiz', title: 'Lead Analyst', team: 'Finance', skills: 'SQL, Power BI', location: 'Prague' };
+    const profile = { name: 'Daniel Ortiz', title: 'Lead Analyst', team: 'Finance', skills: 'SQL, sql,  SQL  , Power   BI', location: 'Prague' };
     const saved = await client.request('/api/people', { method: 'POST', json: profile });
     assert.equal(saved.status, 200);
     assert.equal(saved.json().person.id, persona.id);
     assert.equal(saved.json().person.title, 'Lead Analyst');
+    assert.equal(saved.json().person.skills, 'SQL, Power BI');
+    const duplicate = await client.request('/api/skills/confirm', { method: 'POST', json: { skill: '  sql  ' } });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.json().award.reason, 'already_on_profile');
+    assert.deepEqual(duplicate.json().skills, ['SQL','Power BI']);
     assert.equal((await client.request('/api/people', { method: 'POST', json: { ...profile, name: 'Mia Novak' } })).status, 409);
     assert.equal((await client.request('/api/people', { method: 'POST', json: { name: 'Daniel Ortiz' } })).status, 400);
   });
@@ -96,9 +101,23 @@ describe('authentication gate (dev login enabled)', () => {
     const denied = await client.request(`/api/people/${other.id}`, { method: 'PATCH', json: { title: 'Hijacked' } });
     assert.equal(denied.status, 403);
     assert.notEqual((await client.request('/api/overview')).json().people.find(person => person.id === other.id).title, 'Hijacked');
-    const own = await client.request(`/api/people/${persona.id}`, { method: 'PATCH', json: { title: 'Principal Designer' } });
+    const own = await client.request(`/api/people/${persona.id}`, { method: 'PATCH', json: { title: 'Principal Designer', skills: ['Figma',' figma ','Service   design'] } });
     assert.equal(own.status, 200);
     assert.equal(own.json().person.title, 'Principal Designer');
+    assert.equal(own.json().person.skills, 'Figma, Service design');
+  });
+
+  it('drafts first-login profile fields without saving or publishing solutions', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const before=(await client.request('/api/overview')).json();
+    const response=await client.request('/api/profile/analyze',{method:'POST',json:{text:'I lead Salesforce CRM migrations and improve data quality.'}});
+    assert.equal(response.status,200);
+    assert.equal(response.json().mode,'local');
+    assert.ok(response.json().skills.includes('Salesforce'));
+    assert.equal(response.json().team,'CRM');
+    const after=(await client.request('/api/overview')).json();
+    assert.equal(after.people.find(person=>person.id===persona.id).skills,before.people.find(person=>person.id===persona.id).skills);
+    assert.equal(after.solutions.length,before.solutions.length);
   });
 
   it('puts the Oracle behind sign-in and answers as the signed-in person', async () => {
@@ -112,8 +131,38 @@ describe('authentication gate (dev login enabled)', () => {
     const other = people.find(person => person.id !== persona.id);
     const chat = await client.request('/api/oracle/chat', { method: 'POST', json: { userId: other.id, messages: [{ role: 'user', content: 'my calendar is full of meetings' }] } });
     assert.equal(chat.status, 200);
+    assert.equal(chat.json().candidateSolutions.length,chat.json().retrieval.solutionCandidates);
+    assert.ok(chat.json().candidateSolutions.length<=5);
+    assert.equal(chat.json().candidatePeopleIds.length,chat.json().retrieval.peopleCandidates);
+    assert.ok(chat.json().candidatePeopleIds.length<=5);
+    assert.ok(chat.json().candidatePeopleIds.every(id=>people.some(person=>person.id===id&&person.id!==persona.id)));
     const asked = (await client.request('/api/overview')).json().requests.find(request => request.id === chat.json().requestId);
     assert.equal(asked.user_id, persona.id);
+  });
+
+  it('analyzes shared wisdom and saves confirmed skills and solutions for the signed-in person', async () => {
+    const { client, persona } = await signInAs(app, 'Mia Novak');
+    const analyzed = await client.request('/api/share/analyze', { method:'POST', json:{ text:'I built a Salesforce agent that finds duplicate customer accounts.' } });
+    assert.equal(analyzed.status,200);
+    assert.equal(analyzed.json().mode,'local');
+    assert.ok(analyzed.json().skills.includes('Salesforce'));
+    assert.equal(analyzed.json().solutions.length,1);
+
+    const saved = await client.request('/api/share', { method:'POST', json:{
+      text:'I built a Salesforce agent that finds duplicate customer accounts.',
+      analysis:{headline:'A reusable agent',summary:'Review it',skills:['Salesforce data quality'],experience:[],solutions:[{title:'HTTP Test Duplicate Finder',kind:'agent',summary:'Finds likely duplicate customer accounts.',evidence:'I built a Salesforce agent',runnable:true,minutesSaved:30}]}
+    }});
+    assert.equal(saved.status,200);
+    assert.deepEqual(saved.json().saved,{skills:1,experience:0,solutions:1});
+    const duplicate=await client.request('/api/share',{method:'POST',json:{
+      text:'I have experience with Salesforce data quality.',
+      analysis:{headline:'Existing expertise',summary:'Review it',skills:[' salesforce   DATA quality '],experience:[],solutions:[]}
+    }});
+    assert.equal(duplicate.status,200);
+    assert.equal(duplicate.json().saved.skills,0);
+    const overview=(await client.request('/api/overview')).json();
+    assert.match(overview.people.find(person=>person.id===persona.id).skills,/Salesforce data quality/);
+    assert.equal(overview.solutions.find(solution=>solution.title==='HTTP Test Duplicate Finder').owner,'Mia Novak');
   });
 
   it('ends the session on logout', async () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { cosineSimilarity, createRetrieval, personSearchDocument, solutionSearchDocument } from '../lib/retrieval.mjs';
+import { cosineSimilarity, createRetrieval, personSearchDocument, selectRelevantPeople, selectRelevantSolutions, solutionSearchDocument } from '../lib/retrieval.mjs';
 
 test('person embedding document excludes identifying fields',()=>{
   const document=personSearchDocument({name:'Priya Nair',title:'Solutions Architect',team:'Platform',skills:'Calendar design, Integrations',experience:'Automated calendar workflows',location:'Sofia',availability:'Thursday'});
@@ -19,6 +19,40 @@ test('solution embedding document contains discovery metadata',()=>{
 test('cosine similarity ranks identical vectors highest',()=>{
   assert.equal(cosineSimilarity([1,0],[1,0]),1);
   assert.equal(cosineSimilarity([1,0],[0,1]),0);
+});
+
+test('relevance gate returns a dynamic number of strong semantic matches',()=>{
+  const records=[
+    {id:1,retrieval:{score:.62,semantic:.54,lexical:1}},
+    {id:2,retrieval:{score:.48,semantic:.46,lexical:.5}},
+    {id:3,retrieval:{score:.34,semantic:.37,lexical:.33}},
+    {id:4,retrieval:{score:.21,semantic:.29,lexical:0}}
+  ];
+  assert.deepEqual(selectRelevantPeople(records).map(record=>record.id),[1,2]);
+});
+
+test('solution relevance gate returns only strong candidates instead of filling the limit',()=>{
+  const records=[
+    {id:1,retrieval:{score:.58,semantic:.52,lexical:1}},
+    {id:2,retrieval:{score:.43,semantic:.44,lexical:.5}},
+    {id:3,retrieval:{score:.24,semantic:.31,lexical:0}},
+    {id:4,retrieval:{score:.18,semantic:.22,lexical:0}},
+    {id:5,retrieval:{score:.12,semantic:.18,lexical:0}}
+  ];
+  assert.deepEqual(selectRelevantSolutions(records).map(record=>record.id),[1,2]);
+});
+
+test('relevance gate returns nobody when the best semantic match is weak',()=>{
+  const records=[
+    {id:1,retrieval:{score:.2,semantic:.28,lexical:0}},
+    {id:2,retrieval:{score:.18,semantic:.25,lexical:0}}
+  ];
+  assert.deepEqual(selectRelevantPeople(records),[]);
+});
+
+test('exact-only relevance gate preserves lexical matches up to the limit',()=>{
+  const records=[1,.5,.33,.25].map((lexical,index)=>({id:index+1,retrieval:{score:lexical,semantic:0,lexical}}));
+  assert.deepEqual(selectRelevantPeople(records,{limit:3,semanticEnabled:false}).map(record=>record.id),[1,2,3]);
 });
 
 test('FTS5 exact search finds systems and skills without embeddings',async()=>{

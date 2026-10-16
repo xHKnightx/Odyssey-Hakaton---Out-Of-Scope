@@ -48,7 +48,13 @@ The Google calendar/mail connection (`/auth/google`, same redirect URI) is a sep
 
 **Gate behaviour.** Without a session, `/api/*` answers `401` (`{"code":"auth_required"}`); `GET /login.html`, `/login.js`, `/style.css` and `/favicon.ico` stay public; other page and `/auth/*` GETs redirect to `/login.html`. State-changing requests carrying `Sec-Fetch-Site: cross-site`, or an `Origin` that differs from `Host`, get `403`.
 
-**Users.** `ensureAuthSchema` adds `email`, `google_sub`, `avatar_url`, `last_login_at` and `profile_completed` to `users` (unique indexes on `lower(email)` and `google_sub`) and creates `sessions`; existing databases keep all their records, and existing profiles stay complete. A Google sign-in is linked to a profile in this order: `google_sub`, then email, then an unclaimed seed profile with the same normalized name, otherwise a new profile is created with placeholder role/team/skills and `profile_completed=0`. The UI then opens a "Welcome" dialog until the person saves their role and skills.
+**Users.** `ensureAuthSchema` adds `email`, `google_sub`, `avatar_url`, `last_login_at` and `profile_completed` to `users` (unique indexes on `lower(email)` and `google_sub`) and creates `sessions`; existing databases keep all their records, and existing profiles stay complete. A Google sign-in is linked to a profile in this order: `google_sub`, then email, then an unclaimed seed profile with the same normalized name, otherwise a new profile is created with placeholder role/team/areas of expertise and `profile_completed=0`. The UI then opens a "Welcome" dialog until the person saves their role and areas of expertise. The SQLite column remains `users.skills` for backward compatibility; product language and LLM contracts call these values **areas of expertise**.
+
+The first-login dialog includes an optional LLM drafting step. `POST /api/profile/analyze` accepts a free-text professional introduction and returns validated role, team/practice, areas of expertise, and experience fields. The response only prefills the form: the introduction is not stored, the draft does not change SQLite, and the person must review and submit the normal profile form. Onboarding never publishes catalogue solutions; reusable tools and agents require the separate Share Wisdom review flow.
+
+Every expertise write path uses the same canonical normalization in `lib/expertise.mjs`: Unicode compatibility normalization, collapsed internal whitespace, trimmed edges, and case-insensitive comparison. The first entered spelling is preserved for display. This deduplicates variants such as `CRM`, ` crm `, and `CRM   ` within one profile without merging distinct concepts such as `CRM` and `CRM automation`. The rule is applied to profile creation and editing, LLM extraction, confirmed suggestions, Share Wisdom, seed loading, and a one-time migration of existing local profiles.
+
+The Expertise directory filter chips are built only from recurring employees' areas of expertise; team/practice values are not presented as expertise filters. One-off expertise remains available through free-text search, which includes name, role, team/practice, location, and all areas of expertise. A team or practice therefore remains searchable without being mislabeled as a skill.
 
 **Google Calendar and Gmail tokens** are stored per user in `data/google-tokens/<user id>.json` (mode `0600`, never committed). A token is released only to the account it was issued for: if the signed-in profile has an email that differs from the token's, the token is ignored, which also protects against ids being reassigned after `npm run db:reset`. Connecting a Google account other than the one signed in is refused and the grant is revoked. A pre-auth `data/google-token.json` is adopted by the user whose email matches.
 
@@ -72,6 +78,8 @@ The older general calendar analysis endpoint still supports Google Calendar/Gmai
 
 `POST /api/oracle/chat` is the main Seek Wisdom endpoint.
 
+Seek Wisdom and Share Wisdom also expose optional browser voice input through the same composer component. In browsers with `MediaRecorder`, the microphone records locally until the colleague presses it again (or the 60-second limit is reached), then sends the audio to the signed-in-only `POST /api/transcribe` endpoint. The server forwards recordings of up to 12 MB to SecondStack's OpenAI-compatible `/audio/transcriptions` endpoint using `TRANSCRIPTION_MODEL` (`gpt-4o-mini-transcribe` by default). The editable transcript is inserted into the existing text area and is never submitted automatically. Browsers without `MediaRecorder` fall back to the Web Speech API when available; denied microphone permission always leaves typing available.
+
 ```mermaid
 sequenceDiagram
   participant U as User
@@ -84,7 +92,7 @@ sequenceDiagram
   P->>E: Embed latest message
   E-->>P: 1,536-dimensional query vector
   P->>S: Cosine search + FTS5 exact search
-  S-->>P: Top 5 solutions + top 5 people
+  S-->>P: Up to 5 qualified solutions + people
   P->>L: Conversation + candidates
   Note over P,L: People are anonymized<br/>before transmission
   L-->>P: Structured recommendation with IDs
@@ -100,6 +108,18 @@ The model must choose one of three recommendation types:
 
 The model cannot select arbitrary records. Returned solution and person IDs are checked against the retrieved candidate set. Invalid IDs are discarded; an invalid solution recommendation becomes `build`.
 
+Structured-output validation also reconciles prose with IDs: if the answer explicitly names the exact role title of a retrieved colleague but omits that colleague from `peopleIds`, the server resolves that title locally and adds the validated candidate ID. This prevents an answer from recommending a role while the UI incorrectly reports that nobody was selected; records outside the retrieved set can never be added.
+
+The signed-in browser also receives the ordered IDs of the locally qualified colleague candidates. `Recommended Experts` contains only the zero to three colleagues explicitly selected by Pythia. Any other candidates that passed the local relevance gate appear separately under `Other potential matches`; that row is omitted when there are no additional candidates. Neither control opens the full Expertise directory. Profile names and details are resolved from the already authorized local directory response and are still not included in the LLM prompt.
+
+## Share Wisdom flow
+
+Share Wisdom mirrors the prototype's review-first flow. `POST /api/share/analyze` sends the colleague's free-text offering to the configured SecondStack chat model. `lib/wisdom.mjs` asks for bounded structured JSON containing **areas of expertise** (human capabilities), experience evidence, and **reusable assets** (`agent`, `automation`, `guide`, `tool`, `knowledge`, or a packaged `skill`). The LLM uses the unambiguous `expertiseAreas` field; the application maps it to the existing internal `skills` field. In the UI a catalogue `skill` is labelled **Playbook / Agent skill** so it cannot be confused with a person's expertise. The server validates and truncates every model-produced field before returning a review draft. If the model is unavailable, a deterministic local extractor provides a clearly labelled fallback draft.
+
+A reusable asset requires both an explicit creation/use statement and a concrete artifact or repeatable workflow in the source message. Every model-produced asset must also carry a verbatim evidence quote that occurs in that message. The server enforces these rules again when saving, so a statement such as “I can vibe code” may add the profile skill `Vibe coding` but cannot publish a catalogue asset.
+
+Nothing is written during analysis. The colleague can edit or deselect every extracted item. `POST /api/share` then stores the original contribution, merges confirmed areas of expertise and experience into the signed-in user's profile, and inserts confirmed non-duplicate solutions into the local catalogue. Newly shared agents are catalogue records only and remain non-runnable until a real executor is integrated. The updated profile and new solutions are immediately added to FTS5 and, when configured, their embeddings are refreshed.
+
 ## Hybrid candidate retrieval
 
 Hybrid retrieval is implemented in `lib/retrieval.mjs` and combines two independent signals.
@@ -112,7 +132,7 @@ Employee embedding documents contain only:
 
 - role;
 - team;
-- skills;
+- areas of expertise (stored in the `skills` column);
 - professional experience description.
 
 They deliberately exclude name, initials, location, availability, contact details, rewards, and activity history. Solution documents contain title, type, summary, and runnable status.
@@ -128,6 +148,10 @@ Candidate scores currently use:
 28% FTS5 rank
 ```
 
+People and solution retrieval first rank expanded pools, then apply a semantic relevance gate before taking at most five candidates of each type. The strongest semantic match must reach `0.30`; remaining records must stay within `0.12` semantic similarity of that best match and retain at least `55%` of its combined hybrid score. This produces variable candidate counts, including zero, rather than filling both lists to five. In exact-only fallback mode, positive FTS5 matches are preserved up to the limit because semantic scores are unavailable. These constants are covered by retrieval tests and should be recalibrated if the embedding model changes.
+
+The Oracle API returns the filtered solution candidates to the client alongside their count. The results view hides `Relevant solutions` when none pass the gate; otherwise the row opens the ranked candidates, while the LLM may select one of them as its primary recommendation.
+
 If embeddings are unavailable, retrieval switches to local lexical matching. When SQLite FTS5 is available it uses the FTS5 index; if the SQLite build cannot load FTS5, it scores the same local fields with a built-in token matcher. No database content is sent to the embedding service in local-only mode.
 
 ### Index lifecycle
@@ -137,23 +161,27 @@ Every embedding row records its entity type, entity ID, model, dimensions, conte
 An employee is re-indexed when:
 
 - a profile is created with `POST /api/people`;
-- a skill is confirmed with `POST /api/skills/confirm`;
-- role, team, skills, or experience changes through `PATCH /api/people/:id`.
+- an area of expertise is confirmed with `POST /api/skills/confirm`;
+- role, team, areas of expertise, or experience changes through `PATCH /api/people/:id`.
+- confirmed Share Wisdom expertise or experience is saved with `POST /api/share`.
+
+A solution is indexed when it is confirmed through Share Wisdom. Exact title matches already in the catalogue are reported as duplicates and are not inserted again.
 
 At startup, FTS5 rows are refreshed when the SQLite build supports the module. Embeddings are requested only when the searchable content hash changed or when `EMBEDDING_MODEL` changed. This prevents repeated embedding calls for unchanged records.
 
 ## Privacy boundary
 
-Names remain in local SQLite and are never included in employee embedding text or in the LLM candidate prompt. The LLM receives a candidate ID, role, team, skills, experience, and retrieval scores. After it returns validated `peopleIds`, the server resolves those IDs to names locally for display.
+Names remain in local SQLite and are never included in employee embedding text or in the LLM candidate prompt. The LLM receives a candidate ID, role, team, `expertiseAreas`, experience, and retrieval scores. After it returns validated `peopleIds`, the server resolves those IDs to names locally for display.
 
 Email addresses, Google account ids, sessions and Calendar/Gmail tokens stay in local SQLite and `data/`; they are not part of employee embedding text or the LLM prompt. The Oracle acts on behalf of the signed-in person only.
 
-The user's Calendar Breather note may be sent to SecondStack when the feature runs; the UI asks users to avoid sensitive personal details. The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. Profile role, team, skills, and professional experience are sent when their embeddings are created and when a profile is included among the top five LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
+The user's Calendar Breather note may be sent to SecondStack when the feature runs; the UI asks users to avoid sensitive personal details. The user's Seek message is sent to SecondStack twice: once for its query embedding and once as part of the LLM conversation. A Share Wisdom message is sent once to the chat model for extraction; the prompt includes the active profile's role, team, and areas of expertise but not the person's name or account identifiers. Voice recordings are sent to SecondStack only after the colleague starts and stops microphone input; the resulting text remains editable before Seek or Share submission. Profile role, team, areas of expertise, and professional experience are sent when their embeddings are created and when a profile is included among the filtered LLM candidates. Sensitive personal or HR data must not be stored in these searchable fields.
 
 ## Failure modes
 
 - If embeddings or SQLite FTS5 fail, Oracle uses the built-in local token matcher.
 - If the chat model fails, Oracle uses its deterministic local recommendation fallback over the retrieved candidates.
+- If Share Wisdom extraction fails, the review screen uses its deterministic local extractor and labels that mode before anything can be saved.
 - If both external services are unavailable, the application remains usable with local exact search.
 - Google Calendar is required for the current preference-based Calendar Breather flow; the older general analysis route retains its seeded demo fallback.
 - If Google sign-in is not configured, the demo persona login keeps the application usable; once Google credentials are set, persona login is off unless `AUTH_DEV_LOGIN=1`.
@@ -167,6 +195,7 @@ LLM_MODEL=gpt-5.4-mini
 LLM_PROVIDER_NAME=SecondStack
 LLM_TIMEOUT_MS=45000
 EMBEDDING_MODEL=text-embedding-3-small
+TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
 
 AUTH_ALLOWED_DOMAINS=t1a.com
 AUTH_DEV_LOGIN=
